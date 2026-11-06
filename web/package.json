@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vue-tsc --noEmit",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run --maxWorkers=1 --no-file-parallelism",
     "test:e2e": "playwright test"
