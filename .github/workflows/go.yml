@@ -1,0 +1,32 @@
+name: Go checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOMAXPROCS: '2'
+      GOTOOLCHAIN: local
+      DANMAKUFLOW_MYSQL_DSN: ''
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.25.14'
+      - name: Unit tests (no database or services)
+        run: go test -p 1 -parallel 1 -count=1 -v ./...
+      - name: Build
+        run: go build -p 1 ./...
+      - name: Vet
+        run: go vet -p 1 ./...
