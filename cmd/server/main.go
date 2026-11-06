@@ -3,12 +3,12 @@ package main
 import (
 	"flag" // command line arguments
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/api"
-	"github.com/charlesAcmen/livestream-danmaku/internal/infra"
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/repo"
-	"github.com/charlesAcmen/livestream-danmaku/internal/service"
-	"github.com/charlesAcmen/livestream-danmaku/internal/ws"
+	"github.com/JavaLyHn/DanmakuFlow/internal/api"
+	"github.com/JavaLyHn/DanmakuFlow/internal/infra"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/repo"
+	"github.com/JavaLyHn/DanmakuFlow/internal/service"
+	"github.com/JavaLyHn/DanmakuFlow/internal/ws"
 	"github.com/gin-gonic/gin" // Gin is a web framework for Go.
 	"go.uber.org/zap"
 )

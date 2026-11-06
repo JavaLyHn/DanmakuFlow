@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/service"
-	"github.com/charlesAcmen/livestream-danmaku/internal/ws"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/service"
+	"github.com/JavaLyHn/DanmakuFlow/internal/ws"
 	"go.uber.org/zap"
 
 	"github.com/gin-gonic/gin"

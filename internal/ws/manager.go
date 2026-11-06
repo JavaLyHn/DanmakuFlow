@@ -10,9 +10,9 @@ import (
 	"time" //broadcast stats data timer
 
 	"github.com/IBM/sarama" //driver for apache Kafka clients lib
-	"github.com/charlesAcmen/livestream-danmaku/internal/infra"
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/model"
+	"github.com/JavaLyHn/DanmakuFlow/internal/infra"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/model"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )

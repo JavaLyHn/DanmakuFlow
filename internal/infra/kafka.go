@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
 	"go.uber.org/zap"
 )
 

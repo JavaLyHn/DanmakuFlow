@@ -10,8 +10,8 @@ import (
 	"os/signal" // handle signals
 	"time"
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/model"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/model"
 	"github.com/gorilla/websocket" // websocket library
 	"go.uber.org/zap"
 )

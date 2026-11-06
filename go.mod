@@ -1,4 +1,4 @@
-module github.com/charlesAcmen/livestream-danmaku
+module github.com/JavaLyHn/DanmakuFlow
 
 go 1.25.0
 

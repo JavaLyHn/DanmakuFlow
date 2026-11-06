@@ -3,8 +3,8 @@ package service
 import (
 	"time"
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/model"
-	"github.com/charlesAcmen/livestream-danmaku/internal/repo"
+	"github.com/JavaLyHn/DanmakuFlow/internal/model"
+	"github.com/JavaLyHn/DanmakuFlow/internal/repo"
 )
 
 // ChatService handles business logic for chat.

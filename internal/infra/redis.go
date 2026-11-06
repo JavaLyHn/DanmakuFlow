@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )

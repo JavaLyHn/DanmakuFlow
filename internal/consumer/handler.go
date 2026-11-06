@@ -17,9 +17,9 @@
 // 	"time"
 
 // 	"github.com/IBM/sarama"
-// 	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-// 	"github.com/charlesAcmen/livestream-danmaku/internal/model"
-// 	"github.com/charlesAcmen/livestream-danmaku/internal/repo"
+// 	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+// 	"github.com/JavaLyHn/DanmakuFlow/internal/model"
+// 	"github.com/JavaLyHn/DanmakuFlow/internal/repo"
 // 	"go.uber.org/zap"
 // )
 
@@ -222,9 +222,9 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/model"
-	"github.com/charlesAcmen/livestream-danmaku/internal/repo"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/model"
+	"github.com/JavaLyHn/DanmakuFlow/internal/repo"
 	"go.uber.org/zap"
 )
 

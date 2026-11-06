@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
-	"github.com/charlesAcmen/livestream-danmaku/internal/infra"
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/model"
+	"github.com/JavaLyHn/DanmakuFlow/internal/infra"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/model"
 	"go.uber.org/zap"
 )
 

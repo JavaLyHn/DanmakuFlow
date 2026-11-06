@@ -4,7 +4,7 @@ package repo
 import (
 	"time" //IsZero()
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/model"
+	"github.com/JavaLyHn/DanmakuFlow/internal/model"
 
 	"gorm.io/gorm"
 )

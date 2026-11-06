@@ -9,10 +9,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/charlesAcmen/livestream-danmaku/internal/consumer"
-	"github.com/charlesAcmen/livestream-danmaku/internal/infra"
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
-	"github.com/charlesAcmen/livestream-danmaku/internal/repo"
+	"github.com/JavaLyHn/DanmakuFlow/internal/consumer"
+	"github.com/JavaLyHn/DanmakuFlow/internal/infra"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/repo"
 )
 
 const (

@@ -1,7 +1,7 @@
 package ws
 
 import (
-	"github.com/charlesAcmen/livestream-danmaku/internal/logger"
+	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
 	"go.uber.org/zap"
 )
 
