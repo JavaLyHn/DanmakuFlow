@@ -42,8 +42,8 @@ func NewClient(uid uint64, name, room string, conn *websocket.Conn) *Client {
 func (c *Client) ReadPump(manager *Manager) {
 	defer func() {
 		// if read failed (client disconnected), unregister the client
-		manager.Unregister <- c
-		c.Socket.Close()
+		manager.UnregisterClient(c)
+		c.Close()
 	}()
 
 	for {
@@ -79,7 +79,7 @@ func (c *Client) ReadPump(manager *Manager) {
 // i.e pumps messages from the hub to the websocket connection
 func (c *Client) WritePump() {
 	defer func() {
-		c.Socket.Close()
+		c.Close()
 	}()
 
 	for {
@@ -118,8 +118,9 @@ func (c *Client) Close() {
 		// 1. Close the done channel to signal WritePump and other observers
 		close(c.done)
 		// 2. Close the physical connection
-		c.Socket.Close()
+		if c.Socket != nil { c.Socket.Close() }
 		// Note: We DO NOT close c.Send here to prevent panic in workers
 		// logger.Log.Info("[CLIENT] Connection closed safely", zap.Uint64("uid", c.UserID))
 	})
 }
+

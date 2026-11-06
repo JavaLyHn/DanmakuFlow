@@ -46,7 +46,7 @@ func RegisterActionHandlers() {
 			RoomID: c.RoomID,
 			Data:   dataBytes,
 		}
-		m.Broadcast <- &outgoingPacket
+		m.broadcast <- &outgoingPacket
 		// logger.Log.Debug("[SERVER HANDLER]Danmaku processed",
 		// 	zap.Uint64("uid", c.UserID),
 		// 	zap.String("room", c.RoomID),
@@ -91,8 +91,9 @@ func RegisterActionHandlers() {
 		// }
 
 		// // C. Send to Manager (Handover responsibility)
-		// m.Broadcast <- &outgoingPacket
+		// m.broadcast <- &outgoingPacket
 
 	})
 	logger.Log.Info("[SERVER HANDLER]Registered Handler: Like/Action")
 }
+

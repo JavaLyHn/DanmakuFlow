@@ -244,3 +244,14 @@ func GetRoomLikes(rdb *redis.Client, roomID string) uint64 {
 
 // 	return onlineVal, likesVal
 // }
+
+// FlushRoomLikes retains one last-batch marker per server run and room. The
+// manager serializes batches: it never starts the next until the previous one
+// has succeeded. Retaining the marker makes ambiguous-reply retries idempotent.
+func FlushRoomLikes(ctx context.Context, rdb *redis.Client, room, run, batch string, count uint64) error {
+ const script = `if redis.call('GET', KEYS[2]) == ARGV[2] then return 0 end
+ redis.call('INCRBY', KEYS[1], ARGV[1])
+ redis.call('SET', KEYS[2], ARGV[2])
+ return 1`
+ return rdb.Eval(ctx, script, []string{fmt.Sprintf(KeyRoomLikes, room), "danmakuflow:likes-batch:"+run+":"+room}, count, batch).Err()
+}

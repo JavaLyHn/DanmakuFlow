@@ -59,16 +59,7 @@ func InitKafkaProducer(brokers []string) sarama.AsyncProducer {
 		// For now, we panic because without Kafka, persistence fails.
 		logger.Log.Panic("[KAFKA INFRA]Failed to start Kafka async producer", zap.Error(err))
 	}
-	//listen from KAFKA producer error channel
-	//if not doing so,errors will fill in channel till blocking producer
-	go func() {
-		for err := range producer.Errors() {
-			logger.Log.Error("[KAFKA INFRA] Kafka Async Write Error",
-				zap.Error(err.Err),
-				zap.Any("msg", err.Msg),
-			)
-		}
-	}()
+	// The manager owns and joins producer result channels.
 	return producer
 }
 
@@ -125,3 +116,4 @@ func PushToInput(producer sarama.AsyncProducer, topic string, payload []byte) {
 	// 	logger.Log.Warn("[KAFKA INFRA] Kafka input buffer full, dropping persistence message")
 	// }
 }
+

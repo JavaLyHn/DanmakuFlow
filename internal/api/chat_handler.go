@@ -73,6 +73,9 @@ func (h *ChatHandler) ConnectWebSocket(c *gin.Context) {
 	// upgrade HTTP connection to WebSocket connection
 	// HTTP:short connection per request&response
 	// WebSocket:long connection, keep-alive
+	release, admitted := h.manager.BeginUpgrade()
+	if !admitted { c.JSON(http.StatusServiceUnavailable, gin.H{"error":"Server is stopping"}); return }
+	defer release()
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logger.Log.Error("[API] Upgrade failed", zap.Error(err))
@@ -82,14 +85,8 @@ func (h *ChatHandler) ConnectWebSocket(c *gin.Context) {
 	// 5. Create Client
 	client := ws.NewClient(uid, name, room, conn)
 
-	// 6. Register to Manager
-	h.manager.Register <- client
-
-	// 7. Start Pumps
-	go client.WritePump()
-	//dependency injection:
-	//inject manager to client rather than storing manager pointer in client struct
-	client.ReadPump(h.manager)
+	// Admission and both pump lifetimes belong to the manager.
+	h.manager.ServeClient(client)
 }
 
 // HandlePlaybackRequest handles GET /api/v1/playback
@@ -134,3 +131,4 @@ func (h *ChatHandler) ConnectWebSocket(c *gin.Context) {
 // 		"count": len(msgs),
 // 	})
 // }
+

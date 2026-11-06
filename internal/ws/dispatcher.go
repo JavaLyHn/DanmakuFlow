@@ -17,9 +17,12 @@ func RegisterAction(msgType int, handler MessageHandler) {
 
 // Dispatch: dispatch message based on type
 func Dispatch(client *Client, manager *Manager, msgType int, data []byte) {
-	if handler, ok := actionRegistry[msgType]; ok {
+	if !manager.begin() { return }
+ defer manager.callbacks.Done()
+ if handler, ok := actionRegistry[msgType]; ok {
 		handler(client, manager, data)
 	} else {
 		logger.Log.Warn("[DISPATCHER]Unknown message type", zap.Int("msgType", msgType))
 	}
 }
+
