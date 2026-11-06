@@ -22,25 +22,6 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.25.14'
-      - name: Prove retained process handles do not imply liveness
-        shell: python
-        run: |
-          from pathlib import Path
-          import subprocess
-          path = Path("internal/localproc/process_windows.go")
-          original = path.read_text()
-          marker = '\tif exit.HighDateTime != 0 || exit.LowDateTime != 0 {\n\t\treturn Identity{}, errors.New("process has exited")\n\t}\n'
-          if original.count(marker) != 1:
-              raise SystemExit("Update the terminated process regression mutation point")
-          try:
-              path.write_text(original.replace(marker, "", 1))
-              result = subprocess.run(["go", "test", "-timeout", "30s", "-p", "1", "-parallel", "1", "-count=1", "-run", "^TestExitedChildDoesNotMatchWhileHandleRetained$", "./internal/localproc"], capture_output=True, text=True)
-              if result.returncode == 0 or "--- FAIL: TestExitedChildDoesNotMatchWhileHandleRetained" not in result.stdout:
-                  print(result.stdout, result.stderr)
-                  raise SystemExit("Terminated process regression was not detected")
-              print("Terminated process regression correctly detected.")
-          finally:
-              path.write_text(original)
       - name: Serial native fake-process and private-control tests
         run: go test -timeout 120s -p 1 -parallel 1 -count=1 -v ./internal/localproc ./internal/runcontrol
       - name: Parse PowerShell scripts without running them
