@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "repoDir": "C:\\path\\to\\DanmakuFlow",
+  "binDir": "C:\\path\\to\\DanmakuFlow\\bin",
+  "mysql": { "executable": "C:\\path\\to\\mysqld.exe", "configFile": "C:\\path\\to\\mysql.ini" },
+  "redis": { "executable": "C:\\path\\to\\redis-server.exe", "configFile": "C:\\path\\to\\redis.conf", "workingDir": "C:\\path\\to\\redis" },
+  "kafka": { "javaExecutable": "C:\\path\\to\\java.exe", "home": "C:\\path\\to\\kafka", "configFile": "C:\\path\\to\\kafka.properties" }
+}
