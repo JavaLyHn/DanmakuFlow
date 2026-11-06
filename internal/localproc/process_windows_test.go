@@ -53,6 +53,14 @@ func TestFakeProcess(t *testing.T) {
 		_ = cmd.Process.Release()
 	}
 	_ = os.WriteFile(filepath.Join(dir, "ready"), []byte("ready"), 0600)
+	if os.Getenv("LOCALPROC_TEST_SELF_EXIT") == "1" {
+		for {
+			if _, err := os.Stat(filepath.Join(dir, "exit")); err == nil {
+				os.Exit(23)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 	<-signals
 	_ = os.WriteFile(filepath.Join(dir, "interrupt"), []byte("received"), 0600)
 	if os.Getenv("LOCALPROC_TEST_DELAY") == "1" {
@@ -206,5 +214,31 @@ func TestStopConsoleCachesCleanExit(t *testing.T) {
 	exited, code, known := ExitStatus(id)
 	if !known || !exited || code != 0 {
 		t.Fatalf("exit status: %v %d %v", exited, code, known)
+	}
+}
+
+func TestExitedChildDoesNotMatchWhileHandleRetained(t *testing.T) {
+	id, dir := testChildMode(t, false, "LOCALPROC_TEST_SELF_EXIT")
+	trackedMu.Lock()
+	handle := tracked[id].handle
+	trackedMu.Unlock()
+	if err := os.WriteFile(filepath.Join(dir, "exit"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Do not call ExitStatus yet: the retained handle deliberately keeps the
+	// terminated Windows process object available for identity queries.
+	status, _, err := waitSingle.Call(handle, 10000)
+	if status != 0 {
+		t.Fatalf("child did not exit: status=%d error=%v", status, err)
+	}
+	if Matches(id) {
+		t.Error("exited child still considered alive")
+	}
+	if _, err := Inspect(id.PID); err == nil {
+		t.Error("Inspect accepted terminated process object")
+	}
+	exited, code, known := ExitStatus(id)
+	if !known || !exited || code != 23 {
+		t.Fatalf("native exit evidence lost: %v %d %v", exited, code, known)
 	}
 }

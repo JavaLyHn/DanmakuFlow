@@ -74,6 +74,9 @@ func Inspect(pid int) (Identity, error) {
 	if ok == 0 {
 		return Identity{}, winerr("GetProcessTimes", e)
 	}
+	if exit.HighDateTime != 0 || exit.LowDateTime != 0 {
+		return Identity{}, errors.New("process has exited")
+	}
 	buf := make([]uint16, 32768)
 	n := uint32(len(buf))
 	ok, _, e = queryImage.Call(h, 0, uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&n)))
