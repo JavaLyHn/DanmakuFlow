@@ -3,19 +3,61 @@ package infra
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
 
 // Unexpected SQL must fail the test even if production code swallows the SQL
 // driver's error. sqlmock alone only checks that its expectations were consumed.
-type guardedSQLPool struct {
-	*sql.DB
+// Intercept at the driver level: GORM can acquire *sql.Conn directly, bypassing
+// a ConnPool wrapper when running MySQL migrations.
+type guardedConnector struct {
+	inner       driver.Driver
+	dsn         string
 	t           *testing.T
 	allowCreate bool
 }
 
-func (p guardedSQLPool) check(query string) {
+var mockSequence atomic.Uint64
+
+func guardedTestDB(t *testing.T, allowCreate, monitorPings bool) (*sql.DB, sqlmock.Sqlmock) {
+	t.Helper()
+	dsn := fmt.Sprintf("guarded_%d", mockSequence.Add(1))
+	inner, mock, err := sqlmock.NewWithDSN(dsn, sqlmock.MonitorPingsOption(monitorPings))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := sql.OpenDB(guardedConnector{inner: inner.Driver(), dsn: dsn, t: t, allowCreate: allowCreate})
+	t.Cleanup(func() {
+		if db.Stats().OpenConnections > 0 {
+			mock.ExpectClose()
+		}
+		_ = db.Close()
+		mock.ExpectClose()
+		_ = inner.Close()
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Error(err)
+		}
+	})
+	return db, mock
+}
+
+func (p guardedConnector) Connect(context.Context) (driver.Conn, error) {
+	conn, err := p.inner.Open(p.dsn)
+	if err != nil {
+		return nil, err
+	}
+	return guardedConn{Conn: conn, guard: p}, nil
+}
+
+func (p guardedConnector) Driver() driver.Driver { return p.inner }
+
+func (p guardedConnector) check(query string) {
 	p.t.Helper()
 	normalized := strings.ToUpper(strings.TrimSpace(query))
 	if strings.HasPrefix(normalized, "SELECT ") {
@@ -27,26 +69,26 @@ func (p guardedSQLPool) check(query string) {
 	p.t.Errorf("unexpected database write: %s", query)
 }
 
-func (p guardedSQLPool) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
-	p.check(query)
-	return p.DB.ExecContext(ctx, query, args...)
+type guardedConn struct {
+	driver.Conn
+	guard guardedConnector
 }
 
-func (p guardedSQLPool) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	p.check(query)
-	return p.DB.QueryContext(ctx, query, args...)
+func (c guardedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.guard.check(query)
+	return c.Conn.(driver.ExecerContext).ExecContext(ctx, query, args)
 }
 
-func (p guardedSQLPool) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
-	p.check(query)
-	return p.DB.QueryRowContext(ctx, query, args...)
+func (c guardedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	c.guard.check(query)
+	return c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
 }
 
-func (p guardedSQLPool) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error) {
-	p.check(query)
-	return p.DB.PrepareContext(ctx, query)
+func (c guardedConn) Prepare(query string) (driver.Stmt, error) {
+	c.guard.check(query)
+	return c.Conn.Prepare(query)
 }
 
-func (p guardedSQLPool) GetDBConn() (*sql.DB, error) {
-	return p.DB, nil
+func (c guardedConn) Ping(ctx context.Context) error {
+	return c.Conn.(driver.Pinger).Ping(ctx)
 }

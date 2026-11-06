@@ -21,21 +21,11 @@ var requiredSelects = []string{
 
 func schemaTestDB(t *testing.T, allowCreate bool) (*gorm.DB, sqlmock.Sqlmock) {
 	t.Helper()
-	sqlDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	sqlDB, mock := guardedTestDB(t, allowCreate, false)
+	db, err := connectDB(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool := guardedSQLPool{DB: sqlDB, t: t, allowCreate: allowCreate}
-	db, err := connectDB(mysql.New(mysql.Config{Conn: pool, SkipInitializeWithVersion: true}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := mock.ExpectationsWereMet(); err != nil {
-			t.Error(err)
-		}
-		_ = sqlDB.Close()
-	})
 	return db, mock
 }
 

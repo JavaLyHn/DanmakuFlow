@@ -37,6 +37,9 @@ func databaseConfig() (*mysqldriver.Config, error) {
 	if strings.TrimSpace(cfg.DBName) == "" {
 		return nil, fmt.Errorf("%s must name a database", databaseDSNEnv)
 	}
+	if cfg.Timeout < 0 || cfg.ReadTimeout < 0 || cfg.WriteTimeout < 0 {
+		return nil, fmt.Errorf("%s timeouts must not be negative", databaseDSNEnv)
+	}
 	cfg.ParseTime = true // DanmakuMessage.SendTime is a time.Time.
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 5 * time.Second

@@ -39,18 +39,26 @@ func TestDatabaseConfigurationPreservesExplicitTarget(t *testing.T) {
 	}
 }
 
+func TestDatabaseConfigurationRejectsNegativeTimeouts(t *testing.T) {
+	for _, option := range []string{"timeout", "readTimeout", "writeTimeout"} {
+		t.Run(option, func(t *testing.T) {
+			t.Setenv("DANMAKUFLOW_MYSQL_DSN", "app:secret@tcp(localhost:3306)/db?"+option+"=-1s")
+			if _, err := databaseConfig(); err == nil {
+				t.Fatal("negative timeouts must be rejected before a connection is attempted")
+			}
+		})
+	}
+}
+
 func TestRepeatedConnectionExecutesNoSchemaOrDataWrites(t *testing.T) {
 	// Only version detection and Ping are permitted. Any DROP, ALTER,
 	// CREATE, TRUNCATE or DML issued by the real GORM path fails this test.
 	for i := 0; i < 2; i++ {
-		sqlDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
-		if err != nil {
-			t.Fatal(err)
-		}
+		sqlDB, mock := guardedTestDB(t, false, true)
 		mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow("8.0.36"))
 		mock.ExpectPing()
 		mock.ExpectClose()
-		db, err := connectDB(mysql.New(mysql.Config{Conn: guardedSQLPool{DB: sqlDB, t: t}}))
+		db, err := connectDB(mysql.New(mysql.Config{Conn: sqlDB}))
 		if err != nil {
 			t.Fatalf("read-only connection failed: %v", err)
 		}
