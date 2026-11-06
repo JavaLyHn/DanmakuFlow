@@ -4,6 +4,8 @@ Go 直播弹幕后端，由 JavaLyHn 维护。支持 WebSocket 房间、弹幕�
 
 当前以 **Go 版本为开发主线**。[DanmakuFlow-Java](https://github.com/JavaLyHn/DanmakuFlow-Java) 保留 Java 实现并暂停开发；只有收到明确的同步指令后，才将选定的 Go 改动同步到 Java。
 
+仓库拆分、验证边界和后续事项见 [开发记录](docs/DEVELOPMENT.md)。
+
 ## 代码结构
 
 | 路径 | 用途 |
