@@ -54,8 +54,8 @@ func(r *Runtime)configMatches(id string,identity localproc.Identity)bool{
 }
 func(r *Runtime)Discover(ctx context.Context,id string,old *Instance)(*Instance,error){
  if old!=nil&&r.Alive(*old){if !samePath(old.Identity.Executable,r.expectedExe(id)){return nil,errors.New("运行程序与当前配置不符")};if err:=localproc.Track(old.Identity);err!=nil{return nil,err};return old,nil}
- if old!=nil&&old.Owned&&old.Ready&&(id=="server"||id=="consumer"){
-  state,err:=runcontrol.ReadStatus(old.RunDir,old.RunID);if err!=nil||state.Phase!="stopped"||state.PID!=old.Identity.PID{return nil,errors.New("上次业务进程异常退出或结果未确认，请检查本机日志和进程记录")}
+ if old!=nil&&old.Owned&&!old.Stopped&&(id=="server"||id=="consumer"){
+  state,err:=runcontrol.ReadStatus(old.RunDir,old.RunID);if !settledBusinessExit(id,*old,state,err){return nil,errors.New("上次业务进程异常退出或结果未确认，请检查本机日志和进程记录")}
  }
  if id=="consumer"{if err:=r.checkGroup(ctx,"");err!=nil{return nil,err};return nil,nil}
  ids,err:=localproc.Listeners(ports[id]);if err!=nil{return nil,err};if len(ids)==0{return nil,nil}
@@ -153,6 +153,11 @@ func(r *Runtime)stopChild(ctx context.Context,id string,inst Instance,targets ma
   if !r.Alive(inst){return errors.New("进程退出但没有匹配的成功停止结果")}
   select{case<-ctx.Done():return ctx.Err();case<-time.After(100*time.Millisecond):}
  }
+}
+// The child can admit work before the launcher's readiness probe finishes.
+// Its durable readiness history must therefore also guard replacement after exit.
+func settledBusinessExit(id string,inst Instance,s runcontrol.Status,err error)bool{
+ return err==nil&&s.PID==inst.Identity.PID&&s.Component==id&&(s.Phase=="stopped"||(!inst.Ready&&!s.EverReady))
 }
 func(r *Runtime)LogTail(id string)(string,error){if _,ok:=labels[id];!ok{return "",errors.New("未知组件")};var parts []string;for _,suffix:=range []string{"stdout","stderr"}{f,err:=os.Open(filepath.Join(r.stateDir,"logs",id+"."+suffix+".log"));if os.IsNotExist(err){continue};if err!=nil{return "",err};info,err:=f.Stat();if err!=nil{f.Close();return "",err};if info.Size()>4096{_,_=f.Seek(-4096,io.SeekEnd)};b,err:=io.ReadAll(io.LimitReader(f,4096));f.Close();if err!=nil{return "",err};parts=append(parts,suffix+":\n"+string(b))};return r.redact(strings.Join(parts,"\n")),nil}
 func(r *Runtime)TrimLogs(){for _,id:=range serviceOrder{for _,suffix:=range []string{"stdout","stderr"}{path:=filepath.Join(r.stateDir,"logs",id+"."+suffix+".log");info,err:=os.Stat(path);if err==nil&&info.Size()>1024*1024{_ = os.Truncate(path,0)}}}}
