@@ -201,7 +201,9 @@ func (r *Runtime) Start(ctx context.Context, id string) (Instance, error) {
 		// shares its console; the launcher already owns this process lifecycle.
 		o.Args = []string{"--defaults-file=" + r.config.MySQL.ConfigFile, "--console", "--no-monitor"}
 	case "redis":
-		o.Args = []string{r.config.Redis.ConfigFile}
+		// MSYS Redis treats a drive-letter positional config as a relative
+		// POSIX path. Include loads the absolute Windows path without that rewrite.
+		o.Args = []string{"--include", filepath.ToSlash(r.config.Redis.ConfigFile)}
 		o.Dir = r.config.Redis.WorkingDir
 	case "kafka":
 		o.Console = true

@@ -1,9 +1,9 @@
 name: Windows launcher checks
 on:
   push:
-    paths: ['internal/localproc/**', 'internal/runcontrol/**', 'scripts/**', '.github/workflows/windows.yml']
+    paths: ['internal/localproc/**', 'internal/runcontrol/**', 'internal/launcher/**', 'scripts/**', '.github/workflows/windows.yml']
   pull_request:
-    paths: ['internal/localproc/**', 'internal/runcontrol/**', 'scripts/**', '.github/workflows/windows.yml']
+    paths: ['internal/localproc/**', 'internal/runcontrol/**', 'internal/launcher/**', 'scripts/**', '.github/workflows/windows.yml']
 permissions:
   contents: read
 concurrency:
@@ -23,7 +23,39 @@ jobs:
         with:
           go-version: '1.25.14'
       - name: Serial native fake-process and private-control tests
-        run: go test -timeout 120s -p 1 -parallel 1 -count=1 -v ./internal/localproc ./internal/runcontrol
+        run: go test -timeout 120s -p 1 -parallel 1 -count=1 -v ./internal/localproc ./internal/runcontrol ./internal/launcher
+      - name: Prepare pinned Redis for isolated Windows path regression
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'redis-7.4.11.zip'
+          Invoke-WebRequest 'https://github.com/redis-windows/redis-windows/releases/download/7.4.11/Redis-7.4.11-Windows-x64-msys2.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'EC629971D76756DD040204297F1A92F43848E7A5F4862D39426BEEAFCCA2A2A9') { throw 'Redis archive checksum differs' }
+          $destination = Join-Path $env:RUNNER_TEMP 'redis-path-test'
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination
+          $exe = @(Get-ChildItem -LiteralPath $destination -Recurse -Filter redis-server.exe)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one Redis executable' }
+          "DANMAKUFLOW_TEST_REDIS_EXE=$($exe[0].FullName)" >> $env:GITHUB_ENV
+      - name: Prove the old Windows config argument fails
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          path = Path("internal/launcher/runtime.go")
+          original = path.read_text()
+          marker = '[]string{"--include", filepath.ToSlash(r.config.Redis.ConfigFile)}'
+          if original.count(marker) != 1:
+              raise SystemExit("Update the Redis argument mutation point")
+          try:
+              path.write_text(original.replace(marker, '[]string{r.config.Redis.ConfigFile}', 1))
+              result = subprocess.run(["go", "test", "-timeout", "30s", "-p", "1", "-parallel", "1", "-count=1", "-run", "^TestRedisLoadsWindowsConfigPath$", "./internal/launcher"], capture_output=True, text=True)
+              if result.returncode == 0 or "Redis exited before loading the Windows config path" not in result.stdout + result.stderr:
+                  print(result.stdout, result.stderr)
+                  raise SystemExit("Redis path regression was not detected")
+              print("Redis path regression correctly detected.")
+          finally:
+              path.write_text(original)
+      - name: Real Redis config loading and graceful shutdown on an isolated port
+        run: go test -timeout 30s -p 1 -parallel 1 -count=1 -v -run '^TestRedisLoadsWindowsConfigPath$' ./internal/launcher
       - name: Parse PowerShell scripts without running them
         shell: powershell
         run: |
