@@ -2,12 +2,18 @@
 package repo
 
 import (
+	"context"
 	"time" //IsZero()
 
 	"github.com/JavaLyHn/DanmakuFlow/internal/model"
 
 	"gorm.io/gorm"
 )
+
+func (r *MessageRepo) CreateInBatchesContext(ctx context.Context, msgs []*model.DanmakuMessage) error {
+	if len(msgs) == 0 { return nil }
+	return r.db.WithContext(ctx).CreateInBatches(msgs, len(msgs)).Error
+}
 
 // MessageRepo handles database operations for danmaku messages.
 type MessageRepo struct {
