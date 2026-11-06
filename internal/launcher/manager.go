@@ -378,7 +378,7 @@ func (m *Manager) stop() {
 			m.finish(err, "stop_failed", "停止结果无法保存")
 			return
 		}
-		m.view(id, "stopped", "已正常停止")
+		m.view(id, "stopped", "已停止")
 	}
 	m.mu.Lock()
 	m.stopping = false

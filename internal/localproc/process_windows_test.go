@@ -242,3 +242,34 @@ func TestExitedChildDoesNotMatchWhileHandleRetained(t *testing.T) {
 		t.Fatalf("native exit evidence lost: %v %d %v", exited, code, known)
 	}
 }
+
+func TestGoneRequiresDefiniteProcessEvidence(t *testing.T) {
+	id, dir := testChildMode(t, false, "LOCALPROC_TEST_SELF_EXIT")
+	if gone, err := Gone(id); err != nil || gone {
+		t.Fatalf("living process considered gone: %v %v", gone, err)
+	}
+	reused := id
+	reused.Created++
+	if gone, err := Gone(reused); err != nil || !gone {
+		t.Fatalf("different process at same PID not recognized: %v %v", gone, err)
+	}
+	if gone, err := Gone(Identity{}); err == nil || gone {
+		t.Fatal("invalid identity was treated as exit evidence")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "exit"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	trackedMu.Lock()
+	handle := tracked[id].handle
+	trackedMu.Unlock()
+	if status, _, err := waitSingle.Call(handle, 10000); status != 0 {
+		t.Fatalf("child did not exit: %d %v", status, err)
+	}
+	if gone, err := Gone(id); err != nil || !gone {
+		t.Fatalf("retained exited process not recognized: %v %v", gone, err)
+	}
+	_, _, _ = ExitStatus(id) // Releases the retained native process handle.
+	if gone, err := Gone(id); err != nil || !gone {
+		t.Fatalf("exit without a retained handle not recognized: %v %v", gone, err)
+	}
+}

@@ -85,6 +85,41 @@ func Inspect(pid int) (Identity, error) {
 	}
 	return Identity{PID: pid, Created: uint64(created.HighDateTime)<<32 | uint64(created.LowDateTime), Executable: syscall.UTF16ToString(buf[:n])}, nil
 }
+
+// Gone requires positive evidence that the original process has ended. Unlike
+// !Matches, denied or failed identity queries are not treated as proof of exit.
+func Gone(id Identity) (bool, error) {
+	if id.PID <= 0 || id.Created == 0 || id.Executable == "" {
+		return false, errors.New("invalid process identity")
+	}
+	if exited, _, known := ExitStatus(id); known && exited {
+		return true, nil
+	}
+	h, _, e := openProcess.Call(0x100000|0x1000, 0, uintptr(id.PID))
+	if h == 0 {
+		// Windows reports ERROR_INVALID_PARAMETER for a PID that no longer exists.
+		if e == syscall.Errno(87) {
+			return true, nil
+		}
+		return false, winerr("OpenProcess", e)
+	}
+	defer closeHandle.Call(h)
+	status, _, e := waitSingle.Call(h, 0)
+	if status == 0 {
+		return true, nil
+	}
+	if status != 258 {
+		return false, winerr("WaitForSingleObject", e)
+	}
+	var created, exited, kernelTime, userTime syscall.Filetime
+	ok, _, e := getProcessTimes.Call(h, uintptr(unsafe.Pointer(&created)), uintptr(unsafe.Pointer(&exited)), uintptr(unsafe.Pointer(&kernelTime)), uintptr(unsafe.Pointer(&userTime)))
+	if ok == 0 {
+		return false, winerr("GetProcessTimes", e)
+	}
+	actualCreated := uint64(created.HighDateTime)<<32 | uint64(created.LowDateTime)
+	return actualCreated != id.Created || exited.HighDateTime != 0 || exited.LowDateTime != 0, nil
+}
+
 func Listeners(port int) ([]Identity, error) {
 	if port < 1 || port > 65535 {
 		return nil, errors.New("invalid port")

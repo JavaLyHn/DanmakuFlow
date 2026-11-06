@@ -12,6 +12,7 @@ var errUnsupported = errors.New("local process control is only supported on Wind
 
 func Start(StartOptions) (Identity, error)        { return Identity{}, errUnsupported }
 func Inspect(int) (Identity, error)               { return Identity{}, errUnsupported }
+func Gone(Identity) (bool, error)                 { return false, errUnsupported }
 func Listeners(int) ([]Identity, error)           { return nil, errUnsupported }
 func stopConsole(context.Context, Identity) error { return errUnsupported }
 func ConsoleHelper(string) error                  { return errUnsupported }

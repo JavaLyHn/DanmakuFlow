@@ -441,6 +441,25 @@ func (r *Runtime) Stop(ctx context.Context, id string, inst Instance, targets ma
 	if id == "server" || id == "consumer" {
 		return r.stopChild(ctx, id, inst, targets)
 	}
+	// A failed startup can be settled even after launcher recovery, but only
+	// with positive exit evidence and no remaining listener. Ready instances
+	// retain the stricter successful-shutdown requirement below.
+	if !inst.Ready {
+		gone, err := localproc.Gone(inst.Identity)
+		if err != nil {
+			return fmt.Errorf("无法确认初始化进程是否退出：%w", err)
+		}
+		if gone {
+			listeners, err := localproc.Listeners(ports[id])
+			if err != nil {
+				return err
+			}
+			if len(listeners) != 0 {
+				return errors.New("初始化进程已退出，但端口仍被占用；未操作占用者")
+			}
+			return nil
+		}
+	}
 	if exited, code, known := localproc.ExitStatus(inst.Identity); known && exited {
 		if code == 0 {
 			return nil

@@ -22,6 +22,25 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
         with:
           go-version: '1.25.14'
+      - name: Prove failed-start cleanup cannot remain permanently blocked
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          path = Path("internal/launcher/runtime.go")
+          original = path.read_text()
+          marker = "\tif !inst.Ready {\n\t\tgone, err := localproc.Gone(inst.Identity)"
+          if original.count(marker) != 1:
+              raise SystemExit("Update the failed-start recovery mutation point")
+          try:
+              path.write_text(original.replace(marker, marker.replace("if !inst.Ready", "if false && !inst.Ready"), 1))
+              result = subprocess.run(["go", "test", "-timeout", "30s", "-p", "1", "-parallel", "1", "-count=1", "-run", "^TestStopRecoversNeverReadyNativeFailure$", "./internal/launcher"], capture_output=True, text=True)
+              if result.returncode == 0 or "cleanup remains blocked" not in result.stdout + result.stderr:
+                  print(result.stdout, result.stderr)
+                  raise SystemExit("Failed-start cleanup regression was not detected")
+              print("Failed-start cleanup regression correctly detected.")
+          finally:
+              path.write_text(original)
       - name: Serial native fake-process and private-control tests
         run: go test -timeout 120s -p 1 -parallel 1 -count=1 -v ./internal/localproc ./internal/runcontrol ./internal/launcher
       - name: Prepare pinned Redis for isolated Windows path regression
