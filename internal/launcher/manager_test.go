@@ -12,6 +12,40 @@ import (
 	"github.com/JavaLyHn/DanmakuFlow/internal/runcontrol"
 )
 
+func TestNewConfigurationDiscardsCompletedOwnership(t *testing.T) {
+	states := []map[string]Instance{
+		{},
+		{"mysql": {Owned: true, Stopped: true}},
+		{"mysql": {Owned: false}, "server": {Owned: true, Stopped: true}},
+	}
+	for _, instances := range states {
+		path := filepath.Join(t.TempDir(), "state.json")
+		saved := savedState{ConfigKey: "old", Stopping: true, Instances: instances, ConsumerTargets: map[int32]int64{0: 10}}
+		if err := runcontrol.AtomicJSON(path, saved); err != nil {
+			t.Fatal(err)
+		}
+		m, err := NewManager(&fakeDriver{}, path, "new")
+		if err != nil {
+			t.Fatalf("completed state blocked configuration change: %v", err)
+		}
+		if len(m.instances) != 0 || m.stopping || m.consumerTargets != nil {
+			t.Fatal("adopted stale state from different configuration")
+		}
+	}
+}
+
+func TestNewConfigurationRejectsUnconfirmedOwnedProcesses(t *testing.T) {
+	for _, inst := range []Instance{{Owned: true}, {Owned: true, Ready: true}} {
+		path := filepath.Join(t.TempDir(), "state.json")
+		if err := runcontrol.AtomicJSON(path, savedState{ConfigKey: "old", Instances: map[string]Instance{"server": inst}}); err != nil {
+			t.Fatal(err)
+		}
+		if m, err := NewManager(&fakeDriver{}, path, "new"); err == nil || m != nil {
+			t.Fatal("discarded unconfirmed owned process after configuration change")
+		}
+	}
+}
+
 type fakeDriver struct {
 	mu                         sync.Mutex
 	events                     []string

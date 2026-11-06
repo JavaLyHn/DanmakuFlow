@@ -80,7 +80,14 @@ func NewManager(d Driver, stateFile, key string) (*Manager, error) {
 		var saved savedState
 		if err := runcontrol.ReadJSON(stateFile, &saved); err == nil {
 			if saved.ConfigKey != key {
-				return nil, errors.New("本机配置已更改，请先按原配置停止已有实例；未认领旧进程")
+				for _, inst := range saved.Instances {
+					if inst.Owned && !inst.Stopped {
+						return nil, errors.New("本机配置已更改，请先按原配置停止已有实例；未认领旧进程")
+					}
+				}
+				// A completed lifecycle has no owned process left to recover.
+				// Recheck external services using the new configuration on start.
+				return m, nil
 			}
 			m.stopping = saved.Stopping
 			m.consumerTargets = saved.ConsumerTargets
