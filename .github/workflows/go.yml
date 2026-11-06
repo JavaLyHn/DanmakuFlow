@@ -49,6 +49,29 @@ jobs:
               print("Regression test correctly rejected the destructive startup mutation.")
           finally:
               path.write_text(original)
+      - name: Prove the schema regression test rejects nullable timestamps
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          path = Path("internal/infra/schema.go")
+          original = path.read_text()
+          marker = "send_time DATETIME(3) NOT NULL"
+          if original.count(marker) != 1:
+              raise SystemExit("Update the timestamp regression mutation point")
+          try:
+              path.write_text(original.replace(marker, "send_time DATETIME(3) NULL"))
+              result = subprocess.run(
+                  ["go", "test", "-p", "1", "-parallel", "1", "-count=1", "-run",
+                   "^TestRepeatedMigrationOnlyCreatesMissingTables$", "./internal/infra"],
+                  capture_output=True, text=True)
+              if result.returncode == 0 or "--- FAIL: TestRepeatedMigrationOnlyCreatesMissingTables" not in result.stdout:
+                  print(result.stdout, result.stderr)
+                  raise SystemExit("Regression test did not detect the weakened timestamp constraint")
+              print("Regression test correctly rejected nullable timestamps.")
+          finally:
+              path.write_text(original)
       - name: Unit tests (no database or services)
         run: go test -p 1 -parallel 1 -count=1 -v ./...
       - name: Build

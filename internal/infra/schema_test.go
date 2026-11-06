@@ -75,7 +75,7 @@ func expectCreateOnly(mock sqlmock.Sqlmock) {
 			room_id VARCHAR(50) NOT NULL,
 			user_id BIGINT UNSIGNED NOT NULL,
 			content VARCHAR(500) NOT NULL,
-			send_time DATETIME(3) NULL,
+			send_time DATETIME(3) NOT NULL,
 			PRIMARY KEY (id),
 			KEY idx_room_time (room_id, send_time),
 			KEY idx_danmaku_messages_user_id (user_id)
