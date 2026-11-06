@@ -82,8 +82,9 @@ func TestStopConsoleReportsNonzeroExit(t *testing.T) {
  exited,code,known:=ExitStatus(id); if !known || !exited || code!=23 { t.Fatalf("exit status: %v %d %v",exited,code,known) }
 }
 func TestStopConsoleWaitTimeoutKeepsTargetTracked(t *testing.T) {
- id,_:=testChildMode(t,false,"LOCALPROC_TEST_DELAY"); ctx,cancel:=context.WithTimeout(context.Background(),time.Second); defer cancel()
+ id,dir:=testChildMode(t,false,"LOCALPROC_TEST_DELAY"); ctx,cancel:=context.WithTimeout(context.Background(),time.Second); defer cancel()
  if err:=StopConsole(ctx,id); err!=context.DeadlineExceeded { t.Fatalf("expected timeout, got %v",err) }
+ if _,err:=os.Stat(filepath.Join(dir,"interrupt")); err!=nil { t.Fatalf("target did not receive interrupt before timeout: %v",err) }
  exited,_,known:=ExitStatus(id); if !known || exited || !Matches(id) { t.Fatal("timed-out child is not tracked and running") }
 }
 func TestStopConsoleCachesCleanExit(t *testing.T) {
@@ -91,3 +92,4 @@ func TestStopConsoleCachesCleanExit(t *testing.T) {
  if err:=StopConsole(ctx,id); err!=nil { t.Fatal(err) }
  exited,code,known:=ExitStatus(id); if !known || !exited || code!=0 { t.Fatalf("exit status: %v %d %v",exited,code,known) }
 }
+

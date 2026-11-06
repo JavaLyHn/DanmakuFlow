@@ -76,10 +76,13 @@ func stopConsole(ctx context.Context,id Identity) error {
 func ConsoleHelper(encoded string) error {
  data,err:=base64.RawURLEncoding.DecodeString(encoded); if err!=nil { return err }; var id Identity; if err=json.Unmarshal(data,&id); err!=nil { return err }; if !Matches(id) { return errors.New("process identity no longer matches") }
  // The helper begins without a console and attaches only to the identified target.
- freeConsole.Call(); ok,_,e:=attachConsole.Call(uintptr(id.PID)); if ok==0 { return winerr("AttachConsole",e) }; defer freeConsole.Call()
+ freeConsole.Call(); ok,_,e:=attachConsole.Call(uintptr(id.PID)); if ok==0 { return winerr("AttachConsole",e) }
  var pids [3]uint32; count,_,e:=consoleProcesses.Call(uintptr(unsafe.Pointer(&pids[0])),uintptr(len(pids))); if count!=2 { return fmt.Errorf("refusing shared or unknown console (members %d): %v",count,e) }
  a,b:=uint32(id.PID),uint32(os.Getpid()); if !((pids[0]==a&&pids[1]==b)||(pids[0]==b&&pids[1]==a)) || !Matches(id) { return errors.New("console membership or identity changed") }
- ok,_,e=consoleHandler.Call(0,1); if ok==0 { return winerr("SetConsoleCtrlHandler",e) }; defer consoleHandler.Call(0,0)
+ // This helper is a transient process: keep Ctrl+C ignored and remain attached
+ // until it exits. Restoring the handler or freeing the console here races
+ // delivery of the event to the helper itself.
+ ok,_,e=consoleHandler.Call(0,1); if ok==0 { return winerr("SetConsoleCtrlHandler",e) }
  count,_,e=consoleProcesses.Call(uintptr(unsafe.Pointer(&pids[0])),uintptr(len(pids))); if count!=2 || !((pids[0]==a&&pids[1]==b)||(pids[0]==b&&pids[1]==a)) || !Matches(id) { return errors.New("console membership or identity changed") }
  ok,_,e=consoleEvent.Call(0,0); if ok==0 { return winerr("GenerateConsoleCtrlEvent",e) }; return nil
 }
@@ -152,3 +155,4 @@ func ExitStatus(id Identity) (exited bool, code uint32, known bool) {
  var c uint32; okValue,_,_:=getExitCode.Call(p.handle,uintptr(unsafe.Pointer(&c))); if okValue==0 { return false,0,false }
  p.exited=true; p.code=c; closeHandle.Call(p.handle); p.handle=0; return true,c,true
 }
+
