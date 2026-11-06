@@ -14,6 +14,7 @@ Go 直播弹幕项目，由 JavaLyHn 维护。支持 WebSocket 房间、弹幕�
 | `cmd/consumer` | Kafka 消费与 MySQL 批量持久化 |
 | `cmd/migrate` | 显式补建缺失的 MySQL 表，保留已有表 |
 | `cmd/client` | 交互式 WebSocket 客户端 |
+| `cmd/launcher` | Windows 本机页面与受控的后端启停 |
 | `web` | Vue 3 / TypeScript 房间互动界面，Vite 构建 |
 | `internal/webui` | 托管构建后的页面与静态资源 |
 | `cmd/benchmark` | 已有压测工具，本轮不运行 |
@@ -25,6 +26,20 @@ Go 直播弹幕项目，由 JavaLyHn 维护。支持 WebSocket 房间、弹幕�
 Go 模块要求版本为 1.25.0。主要依赖为 Gin、Gorilla WebSocket、go-redis、Sarama 和 GORM。
 
 协议地址示例：`ws://127.0.0.1:8080/ws?uid=1001&name=demo&room=1001`。101 为弹幕、102 为房间统计、103 为点赞。`uid` 是客户端提供的身份参数，尚无账号认证。回放 HTTP 接口当前未启用。
+
+## Windows 本机启动器
+
+首次使用需要 Node.js 24、Go 1.25 以及本机 MySQL、Redis、Kafka 和 Java。在仓库根目录的 PowerShell 中先构建（不会启动服务）：
+
+```powershell
+.\scripts\build-local.ps1
+```
+
+双击 `Start-DanmakuFlow.cmd`，首次运行按提示填写各程序和配置文件的绝对路径，并隐藏输入完整 MySQL DSN。配置与凭据保存在 `.local/`，凭据由 Windows 当前用户的 DPAPI 加密，目录权限限于当前用户和 SYSTEM。DSN 须指向本机 `127.0.0.1:3306` 或 `localhost:3306` 上已有的数据库。修改配置可运行 `.\scripts\setup-local.ps1`，按提示选择是否替换已有配置或凭据。启动时优先使用进程环境中已有的 `DANMAKUFLOW_MYSQL_DSN`。
+
+日常双击入口打开 `http://127.0.0.1:4174/`，点击“启动后端”；使用后点击“停止本次启动的服务”。页面显示组件状态及日志。启动器可复用符合配置的现有服务，只停止由启动器拥有的进程，不停止外部服务。刷新或关闭网页不会停止后端。部分启动或停止失败时，查看提示和日志，解决问题后重试；超时会保留进程和相关依赖，不会强杀。页面无法打开时检查 `.local/launcher.stderr.log`、4174 端口和 Windows 应用控制提示。入口不会自动构建；缺少产物时重新运行构建脚本。
+
+当前 Redis 配置未启用持久化，停止后点赞和在线统计不会保留；MySQL 中已落库的弹幕保留。启动器不会自动迁移数据库、格式化 Kafka、创建数据库或 topic；表初始化须按 [数据库操作指南](docs/DATABASE.md) 显式执行。脚本不包含执行策略绕过参数。
 
 ## 浏览器界面
 

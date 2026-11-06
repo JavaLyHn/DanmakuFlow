@@ -1,6 +1,6 @@
 # Local Backend Start/Stop Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Open the existing room page from a Windows shortcut, start its local dependencies and Go processes, and stop only processes created by this launcher after draining accepted work.
 
@@ -38,62 +38,71 @@
 
 Files: create `internal/runcontrol/control.go`, `control_test.go`.
 
-- [ ] Write tests for absent/malformed env, foreign run IDs/PIDs, atomic state, duplicate requests, bounded timeout, retry after stop failure, cancellation without implicit stop, and readiness not overriding stopping.
-- [ ] Implement the shared interface using bounded JSON files in a restricted run directory, atomic replacement, a single polling worker and idempotent request IDs.
-- [ ] Compile locally; validate behavior and a duplicate-command mutation in isolated CI. Commit only the package and tests.
+- [x] Write tests for absent/malformed env, foreign run IDs/PIDs, atomic state, duplicate requests, bounded timeout, retry after stop failure, cancellation without implicit stop, and readiness not overriding stopping.
+- [x] Implement the shared interface using bounded JSON files in a restricted run directory, atomic replacement, a single polling worker and idempotent request IDs.
+- [x] Compile locally; validate behavior and a duplicate-command mutation in isolated CI. Commit only the package and tests.
 
 ### Task 2: Windows process identity and console control
 
 Files: create `internal/localproc/process.go`, `process_windows.go`, `process_other.go`, tests; `.github/workflows/windows.yml` later integrated by root.
 
-- [ ] Write fake/isolated-process tests for creation time mismatch, executable mismatch, listener PID resolution, independent hidden console, unknown console refusal, and timeout without termination.
-- [ ] Implement shared interface with Windows process handles, creation times, full executable paths and native listener lookup. Use CREATE_NEW_CONSOLE + hidden window only for owned MySQL/Kafka; no broad process-name kills. Dedicated helper validates console membership before Ctrl+C.
-- [ ] Cross-compile and run short fake processes in serial Windows CI. No real infrastructure. Commit adapter independently.
+- [x] Write fake/isolated-process tests for creation time mismatch, executable mismatch, listener PID resolution, independent hidden console, unknown console refusal, and timeout without termination.
+- [x] Implement shared interface with Windows process handles, creation times, full executable paths and native listener lookup. Use CREATE_NEW_CONSOLE + hidden window only for owned MySQL/Kafka; no broad process-name kills. Dedicated helper validates console membership before Ctrl+C.
+- [x] Cross-compile and run short fake processes in serial Windows CI. No real infrastructure. Commit adapter independently.
 
 ### Task 3: Drain server work before exiting
 
 Files: `cmd/server/main.go`, `internal/ws/{manager,client,router}.go`, new lifecycle/test files, `internal/api/chat_handler.go`, necessary Redis/Kafka wrappers in `internal/infra`.
 
-- [ ] Write tests for quiescing registration/dispatch, pending message drain, last-room likes, producer flush errors and concurrent unregister/shutdown.
-- [ ] Add `Manager.Shutdown(context.Context) error` and an admission gate. Stop inputs before closing work queues; explicitly close/wait WebSockets, join workers/subscriptions/stat tasks, flush likes and producer, collect errors. Keep normal protocol behavior.
-- [ ] Use explicit `http.Server`/listener; publish runcontrol ready after listening. Route private stop and OS signals to the same bounded lifecycle; report failures without false success.
-- [ ] Compile, isolated CI tests/mutation, then focused commit. Do not alter consumer files or database startup guards.
+- [x] Write tests for quiescing registration/dispatch, pending message drain, last-room likes, producer flush errors and concurrent unregister/shutdown.
+- [x] Add `Manager.Shutdown(context.Context) error` and an admission gate. Stop inputs before closing work queues; explicitly close/wait WebSockets, join workers/subscriptions/stat tasks, flush likes and producer, collect errors. Keep normal protocol behavior.
+- [x] Use explicit `http.Server`/listener; publish runcontrol ready after listening. Route private stop and OS signals to the same bounded lifecycle; report failures without false success.
+- [x] Compile, isolated CI fake-dependency tests and race checks, then focused commit. Do not alter consumer files or database startup guards.
 
 ### Task 4: Consumer drain and commit correctness
 
 Files: `cmd/consumer/main.go`, `internal/consumer/handler.go` (remove obsolete commented implementation), new handler tests, `internal/repo/message_repo.go` context-aware write.
 
-- [ ] Write tests for no mark before DB success, failed batch cannot be bypassed by later offsets, ordered ignored packets, session queue replacement, cancellation drain, stop target offsets and commit failure.
-- [ ] Preserve batching. Queue message metadata with rows; mark only contiguous successfully handled records after transaction success; retain failed work/backpressure. Use per-session channels and bounded final flush contexts.
-- [ ] Expose ready when assigned partitions/worker are active. On runcontrol stop, consume through provided fixed per-partition next-offset targets; verify committed offsets with broker responses, then leave the group and close SQL. Timeout leaves a truthful stop failure and does not kill dependencies.
-- [ ] Compile and isolated CI tests/mutation, then focused commit. Do not edit server or `internal/infra/kafka.go` owned by Task 3.
+- [x] Write tests for no mark before DB success, failed batch cannot be bypassed by later offsets, ordered ignored packets, session queue replacement, cancellation drain, stop target offsets and commit failure.
+- [x] Preserve batching. Queue message metadata with rows; mark only contiguous successfully handled records after transaction success; retain failed work/backpressure. Use per-session channels and bounded final flush contexts.
+- [x] Expose ready when assigned partitions/worker are active. On runcontrol stop, consume through provided fixed per-partition next-offset targets; verify committed offsets with broker responses, then leave the group and close SQL. Timeout leaves a truthful stop failure and does not kill dependencies.
+- [x] Compile and isolated CI fake-dependency tests and race checks, then focused commit. Do not edit server or `internal/infra/kafka.go` owned by Task 3.
 
 ### Task 5: Launcher orchestration and HTTP security
 
 Files: create `cmd/launcher/main.go`, `internal/launcher/{config,manager,runtime,http}.go` and corresponding tests.
 
-- [ ] Write tests against fake process/probe/control adapters covering ordered starts, reused services, stale ownership, unknown consumers, serialized operations, partial failure, retained dependencies, graceful-stop result verification and retries.
-- [ ] Load strict local JSON config (paths for MySQL EXE/config, Redis EXE/config/workdir, Java/Kafka home/config; build dir and repo root). Validate complete configuration before spawning. Use bounded per-component append logs and persist instance identity/run records.
-- [ ] Implement start probes: MySQL OpenDB+CheckSchema, Redis PING, Kafka metadata/topic leaders/group identity. Never migrate/format. Spawn prebuilt Go children with DSN only where required. Cache status, periodically recheck active instances, remove ready on failure.
-- [ ] Implement stop: validate ownership; server drain/result/exit; snapshot Kafka next offsets; consumer drain/result/exit; owned Kafka/Redis/MySQL normal stop, preserving external dependencies. Redis SHUTDOWN uses an already verified connection with reconnect/retries disabled.
-- [ ] Serve static page plus `/api/local/session`, `/api/local/status`, `/api/local/start`, `/api/local/stop` and fixed component log-tail lookup. Exact Host/Origin, no CORS, random token header on mutating calls; no commands/paths supplied by browser. GET has no lifecycle side effects.
-- [ ] Serial compile/CI fake tests and focused commits for orchestration and HTTP boundary.
+- [x] Write tests against fake process/probe/control adapters covering ordered starts, reused services, stale ownership, unknown consumers, serialized operations, partial failure, retained dependencies, graceful-stop result verification and retries.
+- [x] Load strict local JSON config (paths for MySQL EXE/config, Redis EXE/config/workdir, Java/Kafka home/config; build dir and repo root). Validate complete configuration before spawning. Use bounded per-component append logs and persist instance identity/run records.
+- [x] Implement start probes: MySQL OpenDB+CheckSchema, Redis PING, Kafka metadata/topic leaders/group identity. Never migrate/format. Spawn prebuilt Go children with DSN only where required. Cache status, periodically recheck active instances, remove ready on failure.
+- [x] Implement stop: validate ownership; server drain/result/exit; snapshot Kafka next offsets; consumer drain/result/exit; owned Kafka/Redis/MySQL normal stop, preserving external dependencies. Redis SHUTDOWN uses an already verified connection with reconnect/retries disabled.
+- [x] Serve static page plus `/api/local/session`, `/api/local/status`, `/api/local/start`, `/api/local/stop` and fixed component log-tail lookup. Exact Host/Origin, no CORS, random token header on mutating calls; no commands/paths supplied by browser. GET has no lifecycle side effects.
+- [x] Serial compile/CI fake tests and focused commits for orchestration and HTTP boundary.
 
 ### Task 6: Existing page integration
 
 Files: create `web/src/useLocalBackend.ts`, `LocalBackendPanel.vue`, unit tests; modify `App.vue`, `style.css`, add `web/e2e/launcher.spec.ts`.
 
-- [ ] Write failing Vitest tests for no implicit start, token-bearing explicit actions, status updates/failures, retry, disposal and unavailable capability. Run serial npm test and inspect RED.
-- [ ] Implement one compact panel: start, stop owned services, five statuses, progress, bounded error detail, external-instance labels, Redis persistence notice. Same-origin feature detection only; absent endpoint hides panel on ordinary server/Vite pages.
-- [ ] Pause room connection/sending only when the selected business port is being stopped. Retain actual WebSocket-driven disconnection state and all current room semantics.
-- [ ] Verify serial unit/build and mocked browser flows including narrow layout, two tabs/deduplicated starts, partial failure/stop retry, external-instance protection. Commit page changes independently.
+- [x] Write failing Vitest tests for no implicit start, token-bearing explicit actions, status updates/failures, retry, disposal and unavailable capability. Run serial npm test and inspect RED.
+- [x] Implement one compact panel: start, stop owned services, five statuses, progress, bounded error detail, external-instance labels, Redis persistence notice. Same-origin feature detection only; absent endpoint hides panel on ordinary server/Vite pages.
+- [x] Pause room connection/sending only when the selected business port is being stopped. Retain actual WebSocket-driven disconnection state and all current room semantics.
+- [x] Verify serial unit/build and mocked browser flows including narrow layout, partial failure/stop retry and external-instance protection; cover concurrent/deduplicated starts with manager tests. Commit page changes independently.
 
 ### Task 7: Windows entry, build, configuration and delivery
 
 Files: `Start-DanmakuFlow.cmd`, `scripts/{start-local,setup-local,build-local}.ps1`, `config/launcher.example.json`, `.gitignore`, workflow changes, README/development/design status updates.
 
-- [ ] First setup discovers installed tool paths, requests DSN privately, persists DPAPI current-user secret under restricted `.local/`; no database operation. Repeated launch loads current config/secret, starts hidden launcher once and opens 4174. Missing artifacts give clear build instructions.
-- [ ] Build script uses serial npm build and Go `-p 1` builds with cache paths when available; no startup and no benchmark. Use prebuilt executables for daily startup.
-- [ ] Add serial Windows fake-process checks and Linux regression/mutation tests; retain existing DB guard mutations and Web tests. All infrastructure remains mocked/absent.
-- [ ] Fresh final review of ownership, shutdown and frontend; fix material findings with regression tests, verify CI at exact code SHA, then merge/push focused commits without rewriting history. Build/copy ignored local artifacts and setup entry into main checkout without starting infrastructure.
-- [ ] Document one-time local setup/build, daily two-button operation, failure/retry, preserved external services, Redis ephemeral data and actual test evidence/remaining live-environment limitation.
+- [x] First setup discovers installed tool paths, requests DSN privately, persists DPAPI current-user secret under restricted `.local/`; no database operation. Repeated launch loads current config/secret, starts hidden launcher once and opens 4174. Missing artifacts give clear build instructions.
+- [x] Build script uses serial npm build and Go `-p 1` builds with cache paths when available; no startup and no benchmark. Use prebuilt executables for daily startup.
+- [x] Add serial Windows fake-process checks and Linux regression/mutation tests; retain existing DB guard mutations and Web tests. All infrastructure remains mocked/absent.
+- [x] Fresh final review of ownership, shutdown and frontend; fix material findings with regression tests, verify CI at exact code SHA, then merge/push focused commits without rewriting history. Build/copy ignored local artifacts and setup entry into main checkout without starting infrastructure.
+- [x] Document one-time local setup/build, daily two-button operation, failure/retry, preserved external services, Redis ephemeral data and actual test evidence/remaining live-environment limitation.
+## Delivery and validation record
+
+Implementation is complete. Exact CI runs and local build evidence are recorded in `docs/DEVELOPMENT.md`. Tests use mocked SQL, fake service adapters, short Windows test children and mocked browser requests/WebSockets. No live infrastructure, existing MySQL, load tests or Java changes were used.
+
+Local Go executable tests and gofmt were blocked by application control; compilation remained available. CI performed formatting and execution without bypassing the local policy. The first frontend RED was a missing-module failure; subsequent behavior is covered by 16 passing unit tests and 10 browser scenarios, not a claimed complete local behavioral RED/GREEN sequence. Concurrent requests are verified at the manager boundary; there is no separate two-real-browser-tabs backend integration test.
+
+Independent reviews and follow-up tests addressed native console event delivery, process ownership recovery, readiness persistence, retryable consumer draining, persistent stop targets and configuration changes after completed shutdown. A proposed mutation for Windows terminated-process inspection did not reproduce on the runner (the old identity query also rejected the exited process); the explicit exit guard and behavioral test remain, with no claim that this mutation proved a previous failure.
+
+The main checkout receives the focused commits and ignored build artifacts. Initial machine path/credential setup remains an explicit local prompt; no secret was requested in chat and no services were started during delivery.
