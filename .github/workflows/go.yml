@@ -21,26 +21,21 @@ jobs:
       DANMAKUFLOW_MYSQL_DSN: ''
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.14'
-      - name: Format changed Go files for local review (no executable workaround on Windows)
+      - name: Check lifecycle Go formatting without changing source
         shell: python
         run: |
-          from pathlib import Path
           import subprocess
-          files = subprocess.check_output(["git", "diff", "--name-only", "4b00dc7", "HEAD", "--", "*.go"], text=True).splitlines()
-          files = [f for f in files if Path(f).is_file()]
-          if files:
-              subprocess.run(["gofmt", "-w", *files], check=True)
-          Path("go-format.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary"]))
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
-        with:
-          name: go-format-patch
-          path: go-format.patch
-          retention-days: 3
+          paths = ["cmd/server", "cmd/consumer", "cmd/launcher", "internal/runcontrol",
+                   "internal/localproc", "internal/launcher", "internal/consumer", "internal/ws",
+                   "internal/api/chat_handler.go", "internal/infra/redis.go",
+                   "internal/infra/kafka.go", "internal/repo/message_repo.go"]
+          files = subprocess.check_output(["git", "ls-files", "--", *paths], text=True).splitlines()
+          result = subprocess.check_output(["gofmt", "-l", *[f for f in files if f.endswith(".go")]], text=True)
+          if result.strip():
+              raise SystemExit("Go files need formatting:\n" + result)
       - name: Prove duplicate stop requests cannot run twice
         shell: python
         run: |
