@@ -32,8 +32,16 @@ func main() {
 	//logic handler functions[Danmaku,Like,Broadcast stats]
 	ws.RegisterActionHandlers()
 
-	// 1. Init DB (Shared by all layers)
-	db := infra.InitDB()
+	// Connect only; normal startup must never initialize or reset tables.
+	db, err := infra.OpenDB()
+	if err != nil {
+		logger.Log.Fatal("[SERVER]Database connection failed", zap.Error(err))
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Log.Fatal("[SERVER]Database pool unavailable", zap.Error(err))
+	}
+	defer sqlDB.Close()
 	// 2. Init Layers (Dependency Injection)
 	// Repo -> Service -> Handler
 	messageRepo := repo.NewMessageRepo(db)

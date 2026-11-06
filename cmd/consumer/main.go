@@ -28,9 +28,17 @@ func main() {
 
 	logger.Log.Info("[KAFKA CONSUMER]Starting Kafka Consumer...")
 
-	// 2. init db
-	db := infra.InitDB()
-	logger.Log.Info("[KAFKA CONSUMER]Database initialized")
+	// Connect only; restarting a consumer must preserve stored messages.
+	db, err := infra.OpenDB()
+	if err != nil {
+		logger.Log.Fatal("[KAFKA CONSUMER]Database connection failed", zap.Error(err))
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.Log.Fatal("[KAFKA CONSUMER]Database pool unavailable", zap.Error(err))
+	}
+	defer sqlDB.Close()
+	logger.Log.Info("[KAFKA CONSUMER]Database connected")
 
 	messageRepo := repo.NewMessageRepo(db)
 	handler := consumer.NewDanmakuHandler(messageRepo, BatchSize)

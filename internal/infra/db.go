@@ -1,40 +1,65 @@
 package infra
 
 import (
-	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
-	"github.com/JavaLyHn/DanmakuFlow/internal/model"
-	"go.uber.org/zap"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-// InitDB connect to db and return db instance
-func InitDB() *gorm.DB {
-	dsn := "root:root@tcp(127.0.0.1:3306)/danmaku_db?charset=utf8mb4&parseTime=True&loc=Local"
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+const databaseDSNEnv = "DANMAKUFLOW_MYSQL_DSN"
+
+// OpenDB connects to the explicitly configured database. It never changes its
+// schema or data. Call CheckSchema before starting a runtime service.
+func OpenDB() (*gorm.DB, error) {
+	cfg, err := databaseConfig()
 	if err != nil {
-		logger.Log.Fatal("[DB INFRA]Failed to connect to database", zap.Error(err))
+		return nil, err
 	}
+	return connectDB(mysql.New(mysql.Config{DSNConfig: cfg}))
+}
 
-	if err := db.Migrator().DropTable(&model.DanmakuMessage{}); err != nil {
-		logger.Log.Error("[DB INFRA]Drop table DanmakuMessage failed", zap.Error(err))
+func databaseConfig() (*mysqldriver.Config, error) {
+	dsn := os.Getenv(databaseDSNEnv)
+	if strings.TrimSpace(dsn) == "" {
+		return nil, fmt.Errorf("%s is required", databaseDSNEnv)
 	}
-	if err := db.Migrator().DropTable(&model.Room{}); err != nil {
-		logger.Log.Error("[DB INFRA]Drop table Room failed", zap.Error(err))
+	cfg, err := mysqldriver.ParseDSN(dsn)
+	if err != nil {
+		// Parser errors may include pieces of the DSN. Never echo credentials.
+		return nil, fmt.Errorf("%s is not a valid MySQL DSN", databaseDSNEnv)
 	}
-	if err := db.Migrator().DropTable(&model.User{}); err != nil {
-		logger.Log.Error("[DB INFRA]Drop table User failed", zap.Error(err))
+	if strings.TrimSpace(cfg.DBName) == "" {
+		return nil, fmt.Errorf("%s must name a database", databaseDSNEnv)
 	}
+	cfg.ParseTime = true // DanmakuMessage.SendTime is a time.Time.
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 5 * time.Second
+	}
+	if cfg.ReadTimeout == 0 {
+		cfg.ReadTimeout = 5 * time.Second
+	}
+	if cfg.WriteTimeout == 0 {
+		cfg.WriteTimeout = 5 * time.Second
+	}
+	return cfg, nil
+}
 
-	// Auto-Migrate (Create tables if not exist)
-	if err := db.AutoMigrate(&model.DanmakuMessage{}); err != nil {
-		logger.Log.Fatal("[DB INFRA]Database table DanmakuMessage migration failed", zap.Error(err))
+func connectDB(dialector gorm.Dialector) (*gorm.DB, error) {
+	// Callers log returned errors. Avoid a second ORM log during initialization.
+	db, err := gorm.Open(dialector, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		if db != nil {
+			if pool, poolErr := db.DB(); poolErr == nil {
+				_ = pool.Close()
+			}
+		}
+		return nil, fmt.Errorf("connect MySQL: %w", err)
 	}
-	if err := db.AutoMigrate(&model.Room{}); err != nil {
-		logger.Log.Fatal("[DB INFRA]Database table Room migration failed", zap.Error(err))
-	}
-	if err := db.AutoMigrate(&model.User{}); err != nil {
-		logger.Log.Fatal("[DB INFRA]Database table User migration failed", zap.Error(err))
-	}
-	return db
+	return db, nil
 }
