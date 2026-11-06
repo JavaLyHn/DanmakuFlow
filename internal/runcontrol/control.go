@@ -30,6 +30,7 @@ type Status struct {
  Phase string `json:"phase"`
  Error string `json:"error,omitempty"`
  RequestID string `json:"requestId,omitempty"`
+ EverReady bool `json:"everReady"`
 }
 type Child struct {
  mu sync.Mutex
@@ -55,9 +56,11 @@ func FromEnv(component string) (*Child,error) {
 func (c *Child) Report(phase string,err error) {
  if c==nil{return};c.mu.Lock();defer c.mu.Unlock()
  if (phase=="ready"||phase=="starting")&&(c.state.Phase=="stopping"||c.state.Phase=="stop_failed"||c.state.Phase=="stopped"){return}
- c.state.Phase=phase;c.state.Error="";if err!=nil{c.state.Error=err.Error()}
+ c.state.Phase=phase;if phase=="ready"{c.state.EverReady=true};c.state.Error="";if err!=nil{c.state.Error=err.Error()}
  c.writeErr=AtomicJSON(filepath.Join(c.dir,"status.json"),c.state)
 }
+// Err lets a managed child reject admission when its readiness cannot be saved.
+func(c *Child)Err()error{if c==nil{return nil};c.mu.Lock();defer c.mu.Unlock();return c.writeErr}
 
 // Serve returns nil only after a successful stop and durable local result. A
 // canceled parent context stops the watcher, not the business service itself.

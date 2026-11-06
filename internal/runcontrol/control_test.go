@@ -29,6 +29,7 @@ func TestControlDisabledAndPartialEnvironment(t *testing.T) {
  c,err:=FromEnv("server"); if c!=nil||err!=nil {t.Fatalf("unexpected enabled control: %v",err)}
  t.Setenv("DANMAKUFLOW_RUN_ID",strings.Repeat("a",32)); if _,err=FromEnv("server");err==nil{t.Fatal("partial config accepted")}
 }
+func TestAdmissionHistorySurvivesLossOfReadiness(t *testing.T){c,dir,id:=childForTest(t);c.Report("ready",nil);if err:=c.Err();err!=nil{t.Fatal(err)};c.Report("starting",nil);s,err:=ReadStatus(dir,id);if err!=nil||!s.EverReady{t.Fatal("prior admission history lost")}}
 
 func TestFailedRequestIsNotRepeatedAndNewRequestCanRetry(t *testing.T) {
  c,dir,id:=childForTest(t); c.Report("ready",nil)
