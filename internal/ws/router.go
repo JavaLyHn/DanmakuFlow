@@ -96,4 +96,3 @@ func RegisterActionHandlers() {
 	})
 	logger.Log.Info("[SERVER HANDLER]Registered Handler: Like/Action")
 }
-

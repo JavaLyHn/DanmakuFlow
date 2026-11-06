@@ -116,4 +116,3 @@ func PushToInput(producer sarama.AsyncProducer, topic string, payload []byte) {
 	// 	logger.Log.Warn("[KAFKA INFRA] Kafka input buffer full, dropping persistence message")
 	// }
 }
-

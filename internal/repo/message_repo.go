@@ -11,7 +11,9 @@ import (
 )
 
 func (r *MessageRepo) CreateInBatchesContext(ctx context.Context, msgs []*model.DanmakuMessage) error {
-	if len(msgs) == 0 { return nil }
+	if len(msgs) == 0 {
+		return nil
+	}
 	return r.db.WithContext(ctx).CreateInBatches(msgs, len(msgs)).Error
 }
 

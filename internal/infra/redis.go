@@ -195,7 +195,7 @@ func GetRoomLikes(rdb *redis.Client, roomID string) uint64 {
 	key := fmt.Sprintf(KeyRoomLikes, roomID)
 
 	val, err := rdb.Get(ctx, key).Result()
-	if err != nil {	
+	if err != nil {
 		if err == redis.Nil {
 			return 0
 		}
@@ -249,9 +249,9 @@ func GetRoomLikes(rdb *redis.Client, roomID string) uint64 {
 // manager serializes batches: it never starts the next until the previous one
 // has succeeded. Retaining the marker makes ambiguous-reply retries idempotent.
 func FlushRoomLikes(ctx context.Context, rdb *redis.Client, room, run, batch string, count uint64) error {
- const script = `if redis.call('GET', KEYS[2]) == ARGV[2] then return 0 end
+	const script = `if redis.call('GET', KEYS[2]) == ARGV[2] then return 0 end
  redis.call('INCRBY', KEYS[1], ARGV[1])
  redis.call('SET', KEYS[2], ARGV[2])
  return 1`
- return rdb.Eval(ctx, script, []string{fmt.Sprintf(KeyRoomLikes, room), "danmakuflow:likes-batch:"+run+":"+room}, count, batch).Err()
+	return rdb.Eval(ctx, script, []string{fmt.Sprintf(KeyRoomLikes, room), "danmakuflow:likes-batch:" + run + ":" + room}, count, batch).Err()
 }

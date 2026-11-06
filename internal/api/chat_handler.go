@@ -74,7 +74,10 @@ func (h *ChatHandler) ConnectWebSocket(c *gin.Context) {
 	// HTTP:short connection per request&response
 	// WebSocket:long connection, keep-alive
 	release, admitted := h.manager.BeginUpgrade()
-	if !admitted { c.JSON(http.StatusServiceUnavailable, gin.H{"error":"Server is stopping"}); return }
+	if !admitted {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Server is stopping"})
+		return
+	}
 	defer release()
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -131,4 +134,3 @@ func (h *ChatHandler) ConnectWebSocket(c *gin.Context) {
 // 		"count": len(msgs),
 // 	})
 // }
-

@@ -118,9 +118,10 @@ func (c *Client) Close() {
 		// 1. Close the done channel to signal WritePump and other observers
 		close(c.done)
 		// 2. Close the physical connection
-		if c.Socket != nil { c.Socket.Close() }
+		if c.Socket != nil {
+			c.Socket.Close()
+		}
 		// Note: We DO NOT close c.Send here to prevent panic in workers
 		// logger.Log.Info("[CLIENT] Connection closed safely", zap.Uint64("uid", c.UserID))
 	})
 }
-
