@@ -165,3 +165,13 @@ h1 { font-size: 20px; font-weight: 650; line-height: 1.4; overflow-wrap: anywher
   }
   .video-placeholder { background: radial-gradient(ellipse at 50% 44%, #1b273b, #0c121d 76%); }
 }
+.local-panel { margin: 18px 24px 0; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+.local-heading, .local-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.local-heading { justify-content: space-between; margin-bottom: 8px; }
+.local-services { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 4px; }
+.local-services li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 4px; overflow-wrap: anywhere; }
+.local-services button { margin-left: auto; padding: 4px 8px; }
+.local-error { color: var(--danger); overflow-wrap: anywhere; white-space: pre-wrap; }
+.local-notice { color: var(--muted); font-size: 12px; }
+.local-logs { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .local-panel { margin: 16px 16px 0; } }

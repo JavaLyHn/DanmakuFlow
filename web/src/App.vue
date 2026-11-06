@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoomSession } from './useRoomSession'
+import { useLocalBackend } from './useLocalBackend'
+import LocalBackendPanel from './LocalBackendPanel.vue'
 
 const {
   config, status, feedback, feedbackError, messages, online, likes,
   sessionRoom, url, locked, connected, connect, disconnect, send, like, dispose,
 } = useRoomSession()
 
+const backend = useLocalBackend()
+const { available: localAvailable, snapshot: localSnapshot, error: localError, logs: localLogs, pending: localPending } = backend
+const stoppingSelected = computed(() => {
+  const state = localSnapshot.value
+  const server = state?.services.find(service => service.id === 'server')
+  return !!state && String(config.port).trim() === String(state.port) && !!server?.owned && ((state.busy && state.operation === 'stop') || (state.phase === 'stop_failed' && server.phase !== 'ready'))
+})
 const draft = ref('')
 const composing = ref(false)
 const messageList = ref<HTMLElement | null>(null)
@@ -25,7 +34,7 @@ const emptyTitle = computed(() => {
 })
 
 function submitDraft() {
-  if (!composing.value && send(draft.value)) draft.value = ''
+  if (!stoppingSelected.value && !composing.value && send(draft.value)) draft.value = ''
 }
 
 function onInputKeydown(event: KeyboardEvent) {
@@ -44,10 +53,11 @@ watch(() => messages.length, async (length, previousLength) => {
   }
 })
 
-onMounted(() => window.addEventListener('pagehide', dispose))
+onMounted(() => { window.addEventListener('pagehide', dispose); void backend.retry() })
 onBeforeUnmount(() => {
   window.removeEventListener('pagehide', dispose)
   dispose()
+  backend.dispose()
 })
 </script>
 
@@ -58,6 +68,8 @@ onBeforeUnmount(() => {
       <span class="brand-name">DanmakuFlow</span>
       <span class="product-label">直播间互动</span>
     </header>
+
+    <LocalBackendPanel v-if="localAvailable" :snapshot="localSnapshot" :error="localError" :logs="localLogs" :pending="localPending" @start="backend.start" @stop="backend.stop" @retry="backend.retry" @logs="backend.loadLogs" />
 
     <main class="room-layout">
       <div class="stage-column">
@@ -102,7 +114,7 @@ onBeforeUnmount(() => {
                 <p id="uid-hint" class="field-hint">留空自动生成</p>
               </div>
             </div>
-            <button id="df-connect" type="button" class="connect-button" :class="{ primary: !locked }" :disabled="status === 'connecting'" @click="connected ? disconnect() : connect()">
+            <button id="df-connect" type="button" class="connect-button" :class="{ primary: !locked }" :disabled="status === 'connecting' || (!connected && stoppingSelected)" @click="connected ? disconnect() : connect()">
               {{ status === 'connecting' ? '连接中…' : connected ? '断开连接' : '连接房间' }}
             </button>
           </div>
@@ -128,10 +140,10 @@ onBeforeUnmount(() => {
 
         <div id="df-feedback" class="feedback" :class="{ 'is-error': feedbackError }" :role="feedbackError ? 'alert' : 'status'" aria-live="polite">{{ feedback }}</div>
         <section class="composer" aria-label="发送弹幕">
-          <input id="df-message" v-model="draft" class="message-input" aria-label="弹幕内容" placeholder="输入弹幕，按 Enter 发送" :disabled="!connected" autocomplete="off" @keydown="onInputKeydown" @compositionstart="composing = true" @compositionend="composing = false">
+          <input id="df-message" v-model="draft" class="message-input" aria-label="弹幕内容" placeholder="输入弹幕，按 Enter 发送" :disabled="!connected || stoppingSelected" autocomplete="off" @keydown="onInputKeydown" @compositionstart="composing = true" @compositionend="composing = false">
           <div class="composer-actions">
-            <button id="df-send" type="button" class="primary" :disabled="!connected" @click="submitDraft">发送</button>
-            <button id="df-like" type="button" :disabled="!connected" @click="like">点赞</button>
+            <button id="df-send" type="button" class="primary" :disabled="!connected || stoppingSelected" @click="submitDraft">发送</button>
+            <button id="df-like" type="button" :disabled="!connected || stoppingSelected" @click="like">点赞</button>
           </div>
           <div class="composer-hints">
             <span>输入恰好为 1 时，提交一次点赞</span>
@@ -142,3 +154,5 @@ onBeforeUnmount(() => {
     </main>
   </div>
 </template>
+
+
