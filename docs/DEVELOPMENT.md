@@ -10,6 +10,9 @@ Windows 入口为 `Start-DanmakuFlow.cmd`。首次先运行 `scripts/build-local
 - 同一提交的 [Windows CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42238042081) 通过：模拟子进程身份核验、独立控制台退出、拒绝共用控制台、超时保留、异常退出识别、私有控制协议和 PowerShell 语法检查。未启动真实 MySQL/Redis/Kafka。
 - 前端代码 `391f6b7` 的 [Web CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42234963463) 通过：16 项单元测试、10 项单 worker 浏览器测试、类型检查与构建；此后前端源码未改变。已查看 375px 启停面板截图，按钮和状态可见。
 - 实现分为私有控制、Windows 进程适配、服务端排空、消费者落库及位点确认、启动器编排、HTTP 边界、页面和本机脚本等独立提交。复查修复了恢复后退出确认、辅助进程收到自身 Ctrl+C、消费者停止重试、固定停止目标持久化和停止后更换配置的问题；补充显式进程退出判断及原生测试。最终独立复核未发现剩余实质问题。
+- 主目录 `D:\LiveStream\DanmakuFlow` 已执行实际构建脚本，产出 `bin/launcher.exe`、`bin/server.exe`、`bin/consumer.exe` 和 `web/dist`。运行入口为根目录 `Start-DanmakuFlow.cmd`，尚未执行首次凭据输入或启动后端。
+
+待办：本次主目录重新安装锁定依赖时，`npm audit` 报告开发测试链 `vitest`、`@vitest/mocker`、`tinypool` 共 3 项告警（2 critical、1 moderate，含传递影响）；`npm audit --omit=dev` 为 0 项。这些开发依赖未包含在页面生产依赖中。本轮未运行 `npm audit fix --force` 或跨大版本升级测试框架；后续需单独升级并重新验证测试配置。审计详情引用 [mocker 文件读取](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)、[mock 注册](https://github.com/advisories/GHSA-qxg6-89mg-rqv8)、[worker 配置](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3)、[run 配置](https://github.com/advisories/GHSA-85c8-ppgw-ccpr)。
 
 ## 2026-11-06：仓库拆分
 
