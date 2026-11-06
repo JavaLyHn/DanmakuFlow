@@ -22,7 +22,7 @@ Large uint64 values, IME Enter, stale events after reconnect, disconnect while m
 
 ## Tasks
 
-- [ ] Protocol/session: add `web/package.json`, Vite/TS configuration, `src/protocol.ts`, `src/useRoomSession.ts` and focused unit tests. Verify raw inputs, uint64, connection/error/close lifecycle and stale callbacks. Commit after unit checks.
-- [ ] Page: add `src/App.vue`, `src/style.css`, entry HTML/TS. Use session API; implement approved layout, scrolling, draft retention, keyboard/IME and empty/error states. Verify type check/build. Separate focused commit.
-- [ ] Hosting: add `internal/webui` and static registration in `cmd/server/main.go`; test assets, no directory listings/traversal, preserve `/ws`, allow terminal use without build assets. Compile locally, run HTTP-only tests in existing serial CI. Separate focused commit.
-- [ ] Browser checks and documentation: add serial mock-backed Playwright/CI, inspect desktop/mobile screenshots, update run commands and development status. Review complete diff, fix material findings, verify CI and push focused commits without rewriting history.
+- [x] Protocol/session: add `web/package.json`, Vite/TS configuration, `src/protocol.ts`, `src/useRoomSession.ts` and focused unit tests. Verify raw inputs, uint64, connection/error/close lifecycle and stale callbacks. Commit after unit checks.
+- [x] Page: add `src/App.vue`, `src/style.css`, entry HTML/TS. Use session API; implement approved layout, scrolling, draft retention, keyboard/IME and empty/error states. Verify type check/build. Separate focused commit.
+- [x] Hosting: add `internal/webui` and static registration in `cmd/server/main.go`; test assets, no directory listings/traversal, preserve `/ws`, allow terminal use without build assets. Compile locally, run HTTP-only tests in existing serial CI. Separate focused commit.
+- [x] Browser checks and documentation: add serial mock-backed Playwright/CI, inspect desktop/mobile screenshots, update run commands and development status. Review complete diff, fix material findings, verify CI and push focused commits without rewriting history.
