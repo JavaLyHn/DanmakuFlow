@@ -110,6 +110,8 @@ jobs:
               path.write_text(original)
       - name: Unit tests (no database or services)
         run: go test -p 1 -parallel 1 -count=1 -v ./...
+      - name: Lifecycle race checks (fakes only, serial)
+        run: go test -race -p 1 -parallel 1 -count=1 ./internal/ws ./internal/consumer ./internal/launcher ./internal/runcontrol ./cmd/consumer
       - name: Build
         run: go build -p 1 ./...
       - name: Vet
