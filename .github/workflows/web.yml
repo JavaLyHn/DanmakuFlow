@@ -1,0 +1,48 @@
+name: Web checks
+
+on:
+  push:
+    paths: ['web/**', '.github/workflows/web.yml']
+  pull_request:
+    paths: ['web/**', '.github/workflows/web.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Type check and build
+        run: npm run build
+      - name: Serial unit tests
+        run: npm test
+      - name: Install one browser
+        run: npx playwright install --with-deps chromium
+      - name: Serial browser tests with mocked WebSocket
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        if: always()
+        with:
+          name: web-browser-report
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
