@@ -83,8 +83,12 @@ func TestStopRecoversNeverReadyNativeFailure(t *testing.T) {
 			inst := Instance{Identity: id, Owned: true, RunID: runID, RunDir: filepath.Join(dir, "runs", runID)}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			if err = r.Stop(ctx, "redis", inst, nil); err == nil || !localproc.Matches(id) {
-				t.Fatal("unready living process was discarded or terminated")
+			// Stop tracks living instances itself. Avoid calling it in the recovery
+			// case until exit, so that case really has no retained process handle.
+			if tracked {
+				if err = r.Stop(ctx, "redis", inst, nil); err == nil || !localproc.Matches(id) {
+					t.Fatal("unready living process was discarded or terminated")
+				}
 			}
 			if err = os.WriteFile(filepath.Join(dir, "exit"), nil, 0600); err != nil {
 				t.Fatal(err)
