@@ -197,7 +197,9 @@ func (r *Runtime) Start(ctx context.Context, id string) (Instance, error) {
 	switch id {
 	case "mysql":
 		o.Console = true
-		o.Args = []string{"--defaults-file=" + r.config.MySQL.ConfigFile, "--console"}
+		// The Windows monitor otherwise forks a different listening PID and
+		// shares its console; the launcher already owns this process lifecycle.
+		o.Args = []string{"--defaults-file=" + r.config.MySQL.ConfigFile, "--console", "--no-monitor"}
 	case "redis":
 		o.Args = []string{r.config.Redis.ConfigFile}
 		o.Dir = r.config.Redis.WorkingDir
