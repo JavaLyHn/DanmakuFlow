@@ -52,4 +52,4 @@ Files: `README.md`, `docs/DATABASE.md`, `docs/DEVELOPMENT.md`, `AGENTS.md`.
 - [ ] Document required environment configuration, explicit initialization, existing-schema handling, reset removal, account privileges and validation limits.
 - [ ] Record the user's limited test authorization and the unchanged frontend/Java priorities.
 - [ ] Obtain independent review; fix material issues and repeat only relevant validation.
-- [ ] Commit documentation, fast-forward the main checkout and push each reviewed commit separately; verify remote HEAD.
+- [ ] Commit documentation, fast-forward the main checkout and push the reviewed commits without squashing; verify remote HEAD. Publish the preserved commit series in one push to avoid redundant CI runs.
