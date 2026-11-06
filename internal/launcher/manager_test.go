@@ -9,6 +9,7 @@ import (
  "path/filepath"
 
  "github.com/JavaLyHn/DanmakuFlow/internal/localproc"
+ "github.com/JavaLyHn/DanmakuFlow/internal/runcontrol"
 )
 
 type fakeDriver struct{mu sync.Mutex;events []string;live map[string]bool;external map[string]bool;failStart,failStop,guard string;wait chan struct{}}
@@ -50,3 +51,53 @@ func TestConfirmedStopsSurviveLauncherRestart(t *testing.T){
  count:=0;for _,event:=range f.events{if event=="stop:kafka"{count++}};if count!=1{t.Fatalf("confirmed Kafka stop repeated %d times",count)};if f.live["mysql"]{t.Fatal("retry did not finish")}
 }
 func TestUnknownExternalDependencyIsPreservedAfterPartialStart(t *testing.T){f:=newFake();f.failStart="consumer";f.guard="mysql";m,_:=NewManager(f,"","test");_=m.Start();waitOperation(t,m);_=m.Stop();waitOperation(t,m);if !f.live["mysql"]{t.Fatal("external dependency was stopped")};if m.Snapshot().Phase!="partial"{t.Fatal("preserved component hidden")}}
+
+type growingTargetsDriver struct{
+ *fakeDriver
+ queries int
+ received []int64
+ statePath string
+ afterTargets func()
+}
+func(f *growingTargetsDriver)Targets(context.Context)(map[int32]int64,error){
+ f.mu.Lock();f.queries++;target:=int64(f.queries*12);hook:=f.afterTargets;f.mu.Unlock()
+ if hook!=nil{hook()};return map[int32]int64{0:target},nil
+}
+func(f *growingTargetsDriver)Stop(ctx context.Context,id string,inst Instance,targets map[int32]int64)error{
+ if id=="consumer"{
+  f.mu.Lock();f.received=append(f.received,targets[0]);f.mu.Unlock()
+  var saved savedState
+  if err:=runcontrol.ReadJSON(f.statePath,&saved);err!=nil{return err}
+  if saved.ConsumerTargets==nil||saved.ConsumerTargets[0]!=targets[0]{return errors.New("consumer request preceded durable target record")}
+ }
+ return f.fakeDriver.Stop(ctx,id,inst,targets)
+}
+func TestConsumerStopTargetSurvivesRetryAndLauncherRestart(t *testing.T){
+ path:=filepath.Join(t.TempDir(),"instances.json")
+ f:=&growingTargetsDriver{fakeDriver:newFake(),statePath:path};m,err:=NewManager(f,path,"test");if err!=nil{t.Fatal(err)}
+ if err=m.Start();err!=nil{t.Fatal(err)};waitOperation(t,m)
+ f.failStop="consumer"
+ for i:=0;i<2;i++{if err=m.Stop();err!=nil{t.Fatal(err)};waitOperation(t,m);if m.Snapshot().CanStart{t.Fatal("failed stop permits restart")}}
+ recovered,err:=NewManager(f,path,"test");if err!=nil{t.Fatal(err)}
+ f.failStop="";if err=recovered.Stop();err!=nil{t.Fatal(err)};waitOperation(t,recovered)
+ if recovered.Snapshot().Phase!="stopped"{t.Fatalf("recovered stop failed: %+v",recovered.Snapshot())}
+ if f.queries!=1||len(f.received)!=3{t.Fatalf("queries=%d requests=%v",f.queries,f.received)}
+ for _,target:=range f.received{if target!=12{t.Fatalf("stop boundary moved: %v",f.received)}}
+ var saved savedState;if err=runcontrol.ReadJSON(path,&saved);err!=nil{t.Fatal(err)};if saved.ConsumerTargets!=nil{t.Fatal("completed stop retained its old boundary")}
+ if err=recovered.Start();err!=nil{t.Fatal(err)};waitOperation(t,recovered)
+ if err=recovered.Stop();err!=nil{t.Fatal(err)};waitOperation(t,recovered)
+ if f.queries!=2||len(f.received)!=4||f.received[3]!=24{t.Fatalf("new run reused old boundary: queries=%d requests=%v",f.queries,f.received)}
+}
+func TestConsumerStopTargetSaveFailureDoesNotSendRequest(t *testing.T){
+ dir:=t.TempDir();path:=filepath.Join(dir,"instances.json")
+ f:=&growingTargetsDriver{fakeDriver:newFake(),statePath:path};m,err:=NewManager(f,path,"test");if err!=nil{t.Fatal(err)}
+ if err=m.Start();err!=nil{t.Fatal(err)};waitOperation(t,m)
+ // Fail persistence precisely after target collection, after begin/producer stop.
+ f.afterTargets=func(){m.mu.Lock();m.stateFile=filepath.Join(dir,"missing","instances.json");m.mu.Unlock()}
+ if err=m.Stop();err!=nil{t.Fatal(err)};waitOperation(t,m)
+ if len(f.received)!=0||!f.live["consumer"]||!f.live["kafka"]{t.Fatal("consumer or dependencies stopped without saved targets")}
+ if m.Snapshot().CanStart{t.Fatal("target save failure permits a new start")}
+ m.mu.Lock();m.stateFile=path;m.mu.Unlock();f.afterTargets=nil
+ if err=m.Stop();err!=nil{t.Fatal(err)};waitOperation(t,m)
+ if m.Snapshot().Phase!="stopped"||f.queries!=1||len(f.received)!=1||f.received[0]!=12{t.Fatalf("save retry changed stop boundary: state=%+v queries=%d requests=%v",m.Snapshot(),f.queries,f.received)}
+}

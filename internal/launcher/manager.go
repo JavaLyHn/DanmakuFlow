@@ -36,12 +36,13 @@ type Driver interface {
  Stop(context.Context,string,Instance,map[int32]int64)error
  Targets(context.Context)(map[int32]int64,error)
 }
-type savedState struct{ConfigKey string `json:"configKey"`;Stopping bool `json:"stopping"`;Instances map[string]Instance `json:"instances"`}
+type savedState struct{ConfigKey string `json:"configKey"`;Stopping bool `json:"stopping"`;Instances map[string]Instance `json:"instances"`;ConsumerTargets map[int32]int64 `json:"consumerTargets"`}
 type Manager struct{
  mu sync.Mutex
  driver Driver
  stateFile,key string
  instances map[string]Instance
+ consumerTargets map[int32]int64
  views map[string]ServiceView
  busy,stopping bool
  generation uint64
@@ -52,7 +53,7 @@ func NewManager(d Driver,stateFile,key string)(*Manager,error){
  for _,id:=range serviceOrder{m.views[id]=ServiceView{ID:id,Label:labels[id],Phase:"stopped"}}
  if stateFile!=""{var saved savedState;if err:=runcontrol.ReadJSON(stateFile,&saved);err==nil{
   if saved.ConfigKey!=key{return nil,errors.New("本机配置已更改，请先按原配置停止已有实例；未认领旧进程")}
-  m.stopping=saved.Stopping
+  m.stopping=saved.Stopping;m.consumerTargets=saved.ConsumerTargets
   for _,id:=range serviceOrder{if inst,ok:=saved.Instances[id];ok{m.instances[id]=inst;v:=m.views[id];v.Owned=inst.Owned;v.Phase="unknown";v.Detail="正在核对原进程身份";if inst.Stopped{v.Phase="stopped";v.Detail="已确认停止"};m.views[id]=v}}
  }else if !os.IsNotExist(err){return nil,fmt.Errorf("读取本机进程记录失败: %w",err)}}
  return m,nil
@@ -63,7 +64,7 @@ func(m *Manager)Snapshot()Snapshot{
  for _,id:=range serviceOrder{v:=m.views[id];s.Services=append(s.Services,v);if v.Owned&&v.Phase!="stopped"{s.CanStop=true}}
  s.CanStop=s.CanStop&&!m.busy;return s
 }
-func(m *Manager)saveLocked()error{if m.stateFile==""{return nil};return runcontrol.AtomicJSON(m.stateFile,savedState{ConfigKey:m.key,Stopping:m.stopping,Instances:m.instances})}
+func(m *Manager)saveLocked()error{if m.stateFile==""{return nil};return runcontrol.AtomicJSON(m.stateFile,savedState{ConfigKey:m.key,Stopping:m.stopping,Instances:m.instances,ConsumerTargets:m.consumerTargets})}
 func(m *Manager)begin(op string)error{
  m.mu.Lock();defer m.mu.Unlock();if m.busy{return errors.New("另一项启停操作正在进行")};if op=="start"&&m.stopping{return errors.New("请先完成上一次停止操作")}
  if err:=m.driver.Validate();err!=nil&&op=="start"{m.lastError=err.Error();m.phase="failed";return err}
@@ -96,6 +97,18 @@ func(m *Manager)retainedDependency(id string)bool{
  dependents:=map[string][]string{"mysql":{"server","consumer"},"redis":{"server"},"kafka":{"server","consumer"}}
  for _,dep:=range dependents[id]{if inst,ok:=m.instance(dep);ok&&!inst.Owned&&m.driver.Alive(inst){return true}};return false
 }
+// Keep the first stop boundary across retries and launcher recovery. Always
+// save before issuing the consumer request, including after a failed save.
+func(m *Manager)stopTargets(ctx context.Context)(map[int32]int64,error){
+ m.mu.Lock();captured:=m.consumerTargets!=nil;m.mu.Unlock()
+ if !captured{
+  targets,err:=m.driver.Targets(ctx);if err!=nil{return nil,err}
+  m.mu.Lock();m.consumerTargets=make(map[int32]int64,len(targets));for p,n:=range targets{m.consumerTargets[p]=n};m.mu.Unlock()
+ }
+ m.mu.Lock();defer m.mu.Unlock()
+ if err:=m.saveLocked();err!=nil{return nil,fmt.Errorf("保存消费者停止目标失败: %w",err)}
+ targets:=make(map[int32]int64,len(m.consumerTargets));for p,n:=range m.consumerTargets{targets[p]=n};return targets,nil
+}
 func(m *Manager)stop(){
  var targets map[int32]int64
  retained:=false
@@ -108,12 +121,12 @@ func(m *Manager)stop(){
   if id!="server"&&id!="consumer"{if guard,ok:=m.driver.(interface{BeforeStopDependency(context.Context,string)error});ok{ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second);err:=guard.BeforeStopDependency(ctx,id);cancel();if err!=nil{retained=true;m.view(id,"ready","保留："+err.Error());continue}}}
   m.view(id,"stopping","等待正常退出")
   ctx,cancel:=context.WithTimeout(context.Background(),stopLimits[id]);var err error
-  if id=="consumer"&&m.driver.Alive(inst){targets,err=m.driver.Targets(ctx)}
+  if id=="consumer"&&m.driver.Alive(inst){targets,err=m.stopTargets(ctx)}
   if err==nil{err=m.driver.Stop(ctx,id,inst,targets)};cancel()
   if err!=nil{m.view(id,"failed",err.Error());m.finish(fmt.Errorf("%s停止未完成：%w",labels[id],err),"stop_failed","停止未完成，相关服务及依赖已保留；可重试停止。");return}
   inst.Ready=false;inst.Stopped=true;if err=m.record(id,inst);err!=nil{m.finish(err,"stop_failed","停止结果无法保存");return};m.view(id,"stopped","已正常停止")
  }
- m.mu.Lock();m.stopping=false;m.mu.Unlock();message:="本次启动的服务已停止。";phase:="stopped";if retained{message="本次可停止的服务已停止，已有实例或仍被依赖的服务保留运行。";phase="partial"};m.finish(nil,phase,message)
+ m.mu.Lock();m.stopping=false;m.consumerTargets=nil;m.mu.Unlock();message:="本次启动的服务已停止。";phase:="stopped";if retained{message="本次可停止的服务已停止，已有实例或仍被依赖的服务保留运行。";phase="partial"};m.finish(nil,phase,message)
 }
 
 // Refresh performs no startup, writes or migrations. It updates cached status
