@@ -42,6 +42,10 @@ func main() {
 		logger.Log.Fatal("[SERVER]Database pool unavailable", zap.Error(err))
 	}
 	defer sqlDB.Close()
+	if err := infra.CheckSchema(db); err != nil {
+		_ = sqlDB.Close() // Fatal exits without running deferred functions.
+		logger.Log.Fatal("[SERVER]Database schema check failed", zap.Error(err))
+	}
 	// 2. Init Layers (Dependency Injection)
 	// Repo -> Service -> Handler
 	messageRepo := repo.NewMessageRepo(db)

@@ -24,6 +24,31 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.14'
+      - name: Prove the startup regression test rejects DropTable
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          path = Path("internal/infra/db.go")
+          original = path.read_text()
+          marker = "\treturn db, nil\n}"
+          if original.count(marker) != 1:
+              raise SystemExit("Update the regression mutation point for the new connection implementation")
+          try:
+              # Only the SQL-mock test runs against this temporary mutation.
+              # It must reject the old bug even when the SQL error is ignored.
+              path.write_text(original.replace(marker, '\t_ = db.Migrator().DropTable("danmaku_messages")\n' + marker))
+              result = subprocess.run(
+                  ["go", "test", "-p", "1", "-parallel", "1", "-count=1", "-run",
+                   "^TestRepeatedConnectionExecutesNoSchemaOrDataWrites$", "./internal/infra"],
+                  capture_output=True, text=True)
+              if result.returncode == 0 or "unexpected database write" not in result.stdout + result.stderr:
+                  print(result.stdout, result.stderr)
+                  raise SystemExit("Regression test did not detect startup database writes")
+              print("Regression test correctly rejected the destructive startup mutation.")
+          finally:
+              path.write_text(original)
       - name: Unit tests (no database or services)
         run: go test -p 1 -parallel 1 -count=1 -v ./...
       - name: Build

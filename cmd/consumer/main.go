@@ -38,6 +38,10 @@ func main() {
 		logger.Log.Fatal("[KAFKA CONSUMER]Database pool unavailable", zap.Error(err))
 	}
 	defer sqlDB.Close()
+	if err := infra.CheckSchema(db); err != nil {
+		_ = sqlDB.Close()
+		logger.Log.Fatal("[KAFKA CONSUMER]Database schema check failed", zap.Error(err))
+	}
 	logger.Log.Info("[KAFKA CONSUMER]Database connected")
 
 	messageRepo := repo.NewMessageRepo(db)

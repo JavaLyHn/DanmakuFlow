@@ -50,7 +50,7 @@ func TestRepeatedConnectionExecutesNoSchemaOrDataWrites(t *testing.T) {
 		mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnRows(sqlmock.NewRows([]string{"version"}).AddRow("8.0.36"))
 		mock.ExpectPing()
 		mock.ExpectClose()
-		db, err := connectDB(mysql.New(mysql.Config{Conn: sqlDB}))
+		db, err := connectDB(mysql.New(mysql.Config{Conn: guardedSQLPool{DB: sqlDB, t: t}}))
 		if err != nil {
 			t.Fatalf("read-only connection failed: %v", err)
 		}
