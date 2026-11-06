@@ -14,6 +14,14 @@ Windows 入口为 `Start-DanmakuFlow.cmd`。首次先运行 `scripts/build-local
 
 待办：本次主目录重新安装锁定依赖时，`npm audit` 报告开发测试链 `vitest`、`@vitest/mocker`、`tinypool` 共 3 项告警（2 critical、1 moderate，含传递影响）；`npm audit --omit=dev` 为 0 项。这些开发依赖未包含在页面生产依赖中。本轮未运行 `npm audit fix --force` 或跨大版本升级测试框架；后续需单独升级并重新验证测试配置。审计详情引用 [mocker 文件读取](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)、[mock 注册](https://github.com/advisories/GHSA-qxg6-89mg-rqv8)、[worker 配置](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3)、[run 配置](https://github.com/advisories/GHSA-85c8-ppgw-ccpr)。
 
+## 2026-11-06：本机首次配置权限修复
+
+用户运行入口时遇到 `SeSecurityPrivilege` 错误。用普通权限运行临时目录中的真实配置脚本，首次配置后再次执行，在受保护目录的 `Set-Acl` 调用处复现了同一错误。脚本进程仍存在也可能只是批处理在等待“按任意键继续”，不能据此判断正在等待配置输入。
+
+配置脚本改用 .NET 的访问规则持久化方法，只保存新描述符中修改的 DACL；仍只授权当前用户与 SYSTEM，保留权限继承禁用和 DPAPI 加密，不要求提升权限或修改系统安全策略。`Set-Acl` 可能尝试写入完整安全描述符，包括需要额外特权的审计部分，相关机制见 [PowerShell 文件系统权限实现](https://github.com/PowerShell/PowerShell/blob/master/src/System.Management.Automation/namespaces/FileSystemSecurity.cs)。启动脚本重新抛出原异常，保留真正的失败位置。
+
+回归脚本 `scripts/tests/setup-local.test.ps1` 在临时目录使用无业务意义的测试凭据，执行首次和重复配置，检查访问规则、加密格式与拒绝替换后的内容保留。本机 Windows PowerShell 5.1 和 PowerShell 7 均已通过。修复代码 `3b94826` 的 [Windows CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42243615063) 已通过两种 PowerShell 的真实脚本回归及现有模拟进程检查，[Go CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42243615085) 也通过。没有修改真实数据库连接、启动服务或请求用户在聊天中提供口令。
+
 ## 2026-11-06：仓库拆分
 
 - `JavaLyHn/DanmakuFlow`：Go 主线，继续在本仓库开发。
