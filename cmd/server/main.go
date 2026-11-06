@@ -8,6 +8,7 @@ import (
 	"github.com/JavaLyHn/DanmakuFlow/internal/logger"
 	"github.com/JavaLyHn/DanmakuFlow/internal/repo"
 	"github.com/JavaLyHn/DanmakuFlow/internal/service"
+	"github.com/JavaLyHn/DanmakuFlow/internal/webui"
 	"github.com/JavaLyHn/DanmakuFlow/internal/ws"
 	"github.com/gin-gonic/gin" // Gin is a web framework for Go.
 	"go.uber.org/zap"
@@ -23,6 +24,7 @@ func main() {
 	// port is argument name,8080 is default value, "server port" is help message
 	// port is in *string type
 	port := flag.String("port", "8080", "server port")
+	webDir := flag.String("web-dir", "web/dist", "built frontend directory (optional)")
 	//resolve arguments,port is given value
 	flag.Parse()
 	logger.Log.Info("[SERVER]Starting server...", zap.String("port", *port))
@@ -67,6 +69,10 @@ func main() {
 
 	// WebSocket Route
 	r.GET("/ws", chatHandler.ConnectWebSocket)
+	if err := webui.Register(r, *webDir); err != nil {
+		logger.Log.Warn("[SERVER]Web UI unavailable; build web/ or set -web-dir. Terminal client remains available",
+			zap.String("directory", *webDir), zap.Error(err))
+	}
 
 	addr := ":" + *port
 	if err := r.Run(addr); err != nil {
