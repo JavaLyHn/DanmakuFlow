@@ -1,4 +1,14 @@
 $ErrorActionPreference = 'Stop'
+function Save-PrivateAccessRules([string]$Path, [Security.AccessControl.FileSystemSecurity]$Rules) {
+    # Persist the modified access rules only. Set-Acl can also attempt to write
+    # the audit section and require SeSecurityPrivilege on a protected path.
+    $item = Get-Item -LiteralPath $Path
+    if ($PSVersionTable.PSEdition -eq 'Core') {
+        [IO.FileSystemAclExtensions]::SetAccessControl($item, $Rules)
+    } else {
+        $item.SetAccessControl($Rules)
+    }
+}
 $repo = Split-Path -Parent $PSScriptRoot
 $local = Join-Path $repo '.local'
 if (-not (Test-Path -LiteralPath $local)) { New-Item -ItemType Directory -Path $local | Out-Null }
@@ -12,7 +22,7 @@ foreach ($principal in @($sid, $system)) {
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', $inherit, 'None', 'Allow')
     $acl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $local -AclObject $acl
+Save-PrivateAccessRules $local $acl
 function Choose-Path([string]$label, [string]$candidate, [bool]$directory) {
     $default = if (Test-Path -LiteralPath $candidate -PathType $(if ($directory) {'Container'} else {'Leaf'})) { $candidate } else { '' }
     do {
@@ -45,7 +55,6 @@ if ((Test-Path -LiteralPath $secretPath) -and ((Read-Host 'Replace existing save
     if ($secret.Length -eq 0) { throw 'DSN cannot be empty.' }
     $secret | Export-Clixml -LiteralPath $secretPath
 }
-Write-Host 'Local configuration saved. No services were started.'
 
 # Apply an explicit ACL even if an existing secret had custom permissions.
 $fileAcl = New-Object System.Security.AccessControl.FileSecurity
@@ -54,4 +63,5 @@ foreach ($principal in @($sid, $system)) {
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($principal, 'FullControl', 'Allow')
     $fileAcl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $secretPath -AclObject $fileAcl
+Save-PrivateAccessRules $secretPath $fileAcl
+Write-Host 'Local configuration saved. No services were started.'

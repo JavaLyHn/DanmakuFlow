@@ -45,6 +45,6 @@ try {
     Check-Session $session
     Start-Process $url
 } catch {
-    Write-Error $_
-    exit 1
+    # Preserve the original setup/startup error and its source location.
+    throw
 }
