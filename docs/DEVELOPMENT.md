@@ -1,16 +1,26 @@
 # Go 主线开发记录
 
+## 2026-11-07：本机 MySQL 初始化
+
+用户明确授权本次只启动 MySQL、创建独立的 `danmakuflow` 库、通过现有迁移命令初始化三张表、保存加密 DSN，并修改本机管理员密码。这是对此前暂停真实数据库操作的单次授权；没有恢复压测、基准测试或其他基础设施联调。
+
+- 使用已验证归属的本机 MySQL 实例，确认实际认证账号为 `root@localhost`，再修改该账号密码；新凭据重新登录验证通过。具体口令未写入仓库。
+- 创建 `utf8mb4` 的 `danmakuflow` 库，执行 `cmd/migrate`，随后确认 `danmaku_messages`、`rooms`、`users` 三张表存在且均为空。没有操作其他数据库的业务表，也没有注入测试业务消息。
+- 本机 DSN 已以当前 Windows 用户的 DPAPI 格式保存，Windows PowerShell 可读取；临时明文客户端配置和含凭据的操作脚本已清除。临时 MySQL 已通过正常关闭命令停止，供后续页面按需启动。
+- 实际启动发现 MySQL 8.4 Windows 默认监控进程会派生不同的监听进程，导致启动器的 PID 与控制台归属核验失败。启动器因此增加 `--no-monitor`，仍将 `--defaults-file` 放在首位。实机复核确认启动 PID 与 3306 监听 PID 一致，重启后新密码和三张表仍可访问，再次正常关闭。[MySQL 官方选项说明](https://dev.mysql.com/doc/refman/8.4/en/server-options.html#option_mysqld_no-monitor)明确该选项关闭 Windows 监控进程；生命周期仍由本地启动器管理。
+- 修复提交 `575aa44` 的 [Go CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42256761816) 通过，本机启动器串行编译成功。本次没有验证完整后端服务链。
+
 ## 本地启动器：使用与验证边界
 
 Windows 入口为 `Start-DanmakuFlow.cmd`。首次先运行 `scripts/build-local.ps1`，再打开入口并按提示配置 MySQL、Redis、Kafka 和 Java 路径及完整 DSN；凭据使用当前用户 DPAPI 加密保存在受限的 `.local/`。日常在 4174 页面使用“启动后端”和“停止本次启动的服务”，失败时查看状态和日志后重试。它可复用已存在的服务，只停止启动器拥有的进程；Redis 当前不持久化，MySQL 已落库数据保留。启动路径不自动迁移表或格式化 Kafka。完整操作见 [README](../README.md)。
 
-本次验证使用模拟依赖和隔离测试；未连接真实基础设施或现有 MySQL，也未执行真实数据库联调、压测或基准测试。本机 Windows 应用控制曾拦截 Go 测试程序及 gofmt，因此没有绕过策略执行；测试执行和格式化在隔离 CI 完成。本机串行构建脚本已生成页面和三个 Go 可执行程序，编译成功不等于真实服务联调通过。
+11 月 6 日的启停功能验证使用模拟依赖和隔离测试；当时未连接真实基础设施或现有 MySQL，也未执行真实数据库联调、压测或基准测试。本机 Windows 应用控制曾拦截 Go 测试程序及 gofmt，因此没有绕过策略执行；测试执行和格式化在隔离 CI 完成。本机串行构建脚本已生成页面和三个 Go 可执行程序，编译成功不等于真实服务联调通过。11 月 7 日仅 MySQL 的单独授权验证见本文件开头。
 
 - 最终代码 `31e7df6` 的 [Go CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42238039085) 通过：全套单元测试、重复停止请求和数据库启动回归变异检查、生命周期竞态检查、编译、vet 以及提交内容的格式检查。
 - 同一提交的 [Windows CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42238042081) 通过：模拟子进程身份核验、独立控制台退出、拒绝共用控制台、超时保留、异常退出识别、私有控制协议和 PowerShell 语法检查。未启动真实 MySQL/Redis/Kafka。
 - 前端代码 `391f6b7` 的 [Web CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42234963463) 通过：16 项单元测试、10 项单 worker 浏览器测试、类型检查与构建；此后前端源码未改变。已查看 375px 启停面板截图，按钮和状态可见。
 - 实现分为私有控制、Windows 进程适配、服务端排空、消费者落库及位点确认、启动器编排、HTTP 边界、页面和本机脚本等独立提交。复查修复了恢复后退出确认、辅助进程收到自身 Ctrl+C、消费者停止重试、固定停止目标持久化和停止后更换配置的问题；补充显式进程退出判断及原生测试。最终独立复核未发现剩余实质问题。
-- 主目录 `D:\LiveStream\DanmakuFlow` 已执行实际构建脚本，产出 `bin/launcher.exe`、`bin/server.exe`、`bin/consumer.exe` 和 `web/dist`。运行入口为根目录 `Start-DanmakuFlow.cmd`，尚未执行首次凭据输入或启动后端。
+- 主目录 `D:\LiveStream\DanmakuFlow` 已执行实际构建脚本，产出 `bin/launcher.exe`、`bin/server.exe`、`bin/consumer.exe` 和 `web/dist`。运行入口为根目录 `Start-DanmakuFlow.cmd`。11 月 6 日交付时尚未配置真实凭据；11 月 7 日的单独授权初始化见本文件开头。
 
 待办：本次主目录重新安装锁定依赖时，`npm audit` 报告开发测试链 `vitest`、`@vitest/mocker`、`tinypool` 共 3 项告警（2 critical、1 moderate，含传递影响）；`npm audit --omit=dev` 为 0 项。这些开发依赖未包含在页面生产依赖中。本轮未运行 `npm audit fix --force` 或跨大版本升级测试框架；后续需单独升级并重新验证测试配置。审计详情引用 [mocker 文件读取](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)、[mock 注册](https://github.com/advisories/GHSA-qxg6-89mg-rqv8)、[worker 配置](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3)、[run 配置](https://github.com/advisories/GHSA-85c8-ppgw-ccpr)。
 
