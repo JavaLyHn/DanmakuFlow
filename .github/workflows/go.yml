@@ -21,9 +21,45 @@ jobs:
       DANMAKUFLOW_MYSQL_DSN: ''
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.14'
+      - name: Format changed Go files for local review (no executable workaround on Windows)
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          files = subprocess.check_output(["git", "diff", "--name-only", "4b00dc7", "HEAD", "--", "*.go"], text=True).splitlines()
+          files = [f for f in files if Path(f).is_file()]
+          if files:
+              subprocess.run(["gofmt", "-w", *files], check=True)
+          Path("go-format.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary"]))
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+        with:
+          name: go-format-patch
+          path: go-format.patch
+          retention-days: 3
+      - name: Prove duplicate stop requests cannot run twice
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+          path = Path("internal/runcontrol/control.go")
+          original = path.read_text()
+          marker = " || req.ID == last"
+          if marker not in original:
+              raise SystemExit("Update the duplicate request mutation point")
+          try:
+              path.write_text(original.replace(marker, " || (req.ID == last && false)", 1))
+              result = subprocess.run(["go", "test", "-p", "1", "-parallel", "1", "-count=1", "-run", "^TestFailedRequestIsNotRepeatedAndNewRequestCanRetry$", "./internal/runcontrol"], capture_output=True, text=True)
+              if result.returncode == 0 or "--- FAIL: TestFailedRequestIsNotRepeatedAndNewRequestCanRetry" not in result.stdout:
+                  print(result.stdout, result.stderr)
+                  raise SystemExit("Duplicate-stop regression was not detected")
+              print("Duplicate-stop regression correctly detected.")
+          finally:
+              path.write_text(original)
       - name: Prove the startup regression test rejects DropTable
         shell: python
         run: |
