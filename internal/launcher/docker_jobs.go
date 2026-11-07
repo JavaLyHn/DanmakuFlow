@@ -58,7 +58,23 @@ func (r *DockerRuntime) waitSetupExit(ctx context.Context, id string, inst Insta
 
 // Only the explicit initialization path bypasses schema/topic readiness. The
 // embedded runtime keeps normal startup, identity checks and shutdown behavior.
-type dockerSetupDriver struct{ *DockerRuntime }
+type dockerSetupDriver struct {
+	*DockerRuntime
+	checkIdle func(context.Context) error
+}
+
+func (r *dockerSetupDriver) Discover(ctx context.Context, id string, old *Instance) (*Instance, error) {
+	if isSetupJob(id) {
+		check := r.checkIdle
+		if check == nil {
+			check = func(ctx context.Context) error { return r.checkGroup(ctx, "") }
+		}
+		if err := check(ctx); err != nil {
+			return nil, fmt.Errorf("初始化前无法确认消费组空闲：%w", err)
+		}
+	}
+	return r.DockerRuntime.Discover(ctx, id, old)
+}
 
 func (r *dockerSetupDriver) Probe(ctx context.Context, id string, inst Instance) error {
 	if isSetupJob(id) {

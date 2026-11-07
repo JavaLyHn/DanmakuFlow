@@ -28,6 +28,7 @@ func run() error {
 	stateDir := flag.String("state-dir", ".local/runtime", "private runtime directory")
 	webDir := flag.String("web-dir", "web/dist", "built frontend")
 	consoleStop := flag.String("console-stop", "", "internal console helper")
+	initializeDocker := flag.Bool("initialize-docker", false, "explicitly create missing Docker database tables and Kafka topic, then stop owned services")
 	flag.Parse()
 	if *consoleStop != "" {
 		return localproc.ConsoleHelper(*consoleStop)
@@ -50,7 +51,23 @@ func run() error {
 		return err
 	}
 	config, configErr := launcher.LoadConfig(cfgPath)
-	runtime := launcher.NewRuntime(config, configErr, dir)
+	runtime := launcher.NewLocalRuntime(config, configErr, dir)
+	if *initializeDocker {
+		dockerRuntime, ok := runtime.(*launcher.DockerRuntime)
+		if !ok {
+			return fmt.Errorf("初始化仅支持 Docker 配置，请先运行 scripts/setup-docker.ps1")
+		}
+		signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stopSignals()
+		ctx, cancel := context.WithTimeout(signalCtx, 20*time.Minute)
+		defer cancel()
+		fmt.Println("正在显式初始化 Docker 数据；每步最长等待 300 秒，失败残留可通过本地页面停止。")
+		if err = dockerRuntime.InitializeDocker(ctx, filepath.Join(dir, "instances.json")); err != nil {
+			return err
+		}
+		fmt.Println("Docker 数据初始化完成；本次创建的服务已停止，复用的原有基础服务保持运行。")
+		return nil
+	}
 	manager, err := launcher.NewManager(runtime, filepath.Join(dir, "instances.json"), runtime.ConfigKey())
 	if err != nil {
 		return err

@@ -78,7 +78,7 @@ export function useLocalBackend() {
     if (!disposed && !error.value) error.value = saved
   }
   async function loadLogs(id: string) {
-    if (!['mysql', 'redis', 'kafka', 'consumer', 'server'].includes(id) || !token || disposed) return
+    if (!['mysql', 'redis', 'kafka', 'consumer', 'server', 'migrate', 'kafka-init'].includes(id) || !token || disposed) return
     try { const data = await read(await request(`/api/local/logs/${id}`, { headers: { 'X-DanmakuFlow-Token': token }, cache: 'no-store' })); if (!disposed) logs.value = String(data.text).slice(-8192) }
     catch (e) { if (!disposed) logs.value = message(e).slice(-8192) }
   }
