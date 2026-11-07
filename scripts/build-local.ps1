@@ -1,3 +1,5 @@
+param([switch]$LauncherOnly)
+
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $node = 'D:\DevTools\node-v24.22.1-win-x64'
@@ -18,7 +20,8 @@ try {
 } finally { Pop-Location }
 Push-Location $repo
 try {
-    foreach ($name in @('launcher', 'server', 'consumer')) {
+    $targets = if ($LauncherOnly) { @('launcher') } else { @('launcher', 'server', 'consumer') }
+    foreach ($name in $targets) {
         & go.exe build -p 1 -o (Join-Path $bin "$name.exe") "./cmd/$name"
         if ($LASTEXITCODE -ne 0) { throw "Build failed: $name" }
     }
