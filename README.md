@@ -29,7 +29,21 @@ Go 模块要求版本为 1.25.0。主要依赖为 Gin、Gorilla WebSocket、go-r
 
 ## Windows 本机启动器
 
-首次使用需要 Node.js 24、Go 1.25 以及本机 MySQL、Redis、Kafka 和 Java。在仓库根目录的 PowerShell 中先构建（不会启动服务）：
+本地开发采用 Docker Desktop 的 Linux 容器：MySQL、Redis、Kafka、消费者和弹幕服务各一个实例，Windows 启动器托管 4174 页面。需要 Node.js 24、Go 1.25，以及已就绪的 Docker Desktop / WSL 2。首次准备时先关闭旧启动器，再依次执行：
+
+```powershell
+.\scripts\setup-docker.ps1
+.\scripts\build-docker.ps1
+.\scripts\init-docker.ps1
+```
+
+配置脚本隐藏输入数据库密码，保存私有配置并备份原配置；构建脚本准备镜像和页面；初始化脚本显式补建缺失表和 Kafka 主题，完成后停止本次启动的容器。普通页面启动不执行迁移。日常仍双击 `Start-DanmakuFlow.cmd`，在页面点击“启动后端”或“停止本次启动的服务”。只停止本次拥有的实例；MySQL/Kafka 数据保留在命名卷中，原生 Windows 数据目录不会挂载或覆盖。
+
+Docker 模式始终读取本项目保存的 DPAPI 数据库连接；终端中的其他 DSN 不会覆盖它。详细配置、首次初始化、资源上限和故障收尾见 [Docker 操作说明](docker/README.md)。约 1.7 GiB 是五个常驻容器的内存上限总和，不包含 Docker 虚拟机或镜像构建，也不是实测占用。真实 Docker 全流程验证仍需在本机重启并启动引擎后完成，详见开发记录。
+
+### 保留的原生运行方式
+
+旧的 native 配置仍可使用本机 MySQL、Redis、Kafka 和 Java。原生 Windows Kafka 存在已记录的日志文件重命名问题，当前迁移使用 Linux 容器解决运行环境限制。原生模式在仓库根目录构建（不会启动服务）：
 
 ```powershell
 .\scripts\build-local.ps1
