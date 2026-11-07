@@ -94,3 +94,9 @@ jobs:
       - name: First and repeated setup with dummy credentials (PowerShell Core)
         shell: pwsh
         run: ./scripts/tests/setup-local.test.ps1
+      - name: Docker setup and entry scripts with dummy credentials (Windows PowerShell)
+        shell: powershell
+        run: ./scripts/test-docker-setup.ps1
+      - name: Docker setup and entry scripts with dummy credentials (PowerShell Core)
+        shell: pwsh
+        run: ./scripts/test-docker-setup.ps1
