@@ -83,7 +83,7 @@ type Manager struct {
 func NewManager() *Manager {
 	rdb := infra.InitRedisClient()
 	id := randomID()
-	return newManager(id, infra.InitKafkaProducer([]string{"127.0.0.1:9092"}), managerIO{
+	return newManager(id, infra.InitKafkaProducer(infra.KafkaBrokers()), managerIO{
 		publish: func(ctx context.Context, room string, data []byte) error {
 			return rdb.Publish(ctx, fmt.Sprintf(infra.KeyRoomPubSub, room), data).Err()
 		},

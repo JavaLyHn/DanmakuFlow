@@ -13,7 +13,7 @@ import (
 
 // Redis Key Templates (Centralized management to avoid typos)
 const (
-	// Ensure Redis is running on localhost:6379 via Docker.
+	// Default address for clients running directly on the host.
 	RedisAddr           = "127.0.0.1:6379"
 	KeyRoomPubSub       = "room:%s:pubsub"    // Channel for Redis Pub/Sub
 	KeyRoomLikes        = "room:%s:likes"     // Counter for likes
@@ -27,7 +27,7 @@ func InitRedisClient() *redis.Client {
 	// Initialize Redis client.
 	// Lazy loading: only create Redis client when first time trying to contact
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     RedisAddr,
+		Addr:     RedisAddress(),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})

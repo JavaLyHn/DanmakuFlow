@@ -168,7 +168,7 @@ func main() {
 	if id := os.Getenv("DANMAKUFLOW_RUN_ID"); id != "" {
 		config.ClientID = "danmakuflow-" + id
 	}
-	client, err := sarama.NewClient([]string{"127.0.0.1:9092"}, config)
+	client, err := sarama.NewClient(infra.KafkaBrokers(), config)
 	if err != nil {
 		logger.Log.Fatal("Kafka client", zap.Error(err))
 	}
