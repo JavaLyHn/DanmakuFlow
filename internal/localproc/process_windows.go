@@ -302,9 +302,7 @@ func SecureDir(path string) error {
 }
 
 var ntdll = syscall.NewLazyDLL("ntdll.dll")
-var shell32 = syscall.NewLazyDLL("shell32.dll")
 var queryProcess = ntdll.NewProc("NtQueryInformationProcess")
-var commandLineToArgv = shell32.NewProc("CommandLineToArgvW")
 
 // ProcessArgs reads the native process command line without starting a subprocess.
 // Callers must revalidate process identity around this query before trusting it.
@@ -348,11 +346,11 @@ func ProcessArgs(pid int) ([]string, error) {
 		return nil, err
 	}
 	var count int32
-	argv, _, e := commandLineToArgv.Call(uintptr(unsafe.Pointer(ptr)), uintptr(unsafe.Pointer(&count)))
-	if argv == 0 {
-		return nil, winerr("CommandLineToArgvW", e)
+	argv, err := syscall.CommandLineToArgv(ptr, &count)
+	if err != nil {
+		return nil, err
 	}
-	defer localFree.Call(argv)
+	defer syscall.LocalFree(syscall.Handle(uintptr(unsafe.Pointer(argv))))
 	if count < 0 || count > 32768 {
 		return nil, errors.New("invalid argument count")
 	}

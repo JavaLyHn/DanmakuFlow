@@ -44,6 +44,8 @@ jobs:
               path.write_text(original)
       - name: Serial native fake-process and private-control tests
         run: go test -timeout 120s -p 1 -parallel 1 -count=1 -v ./internal/localproc ./internal/runcontrol ./internal/launcher
+      - name: Vet Windows process and launcher code
+        run: go vet -p 1 ./...
       - name: Prepare pinned Redis for isolated Windows path regression
         shell: pwsh
         run: |
