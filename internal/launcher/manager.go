@@ -13,17 +13,19 @@ import (
 )
 
 var serviceOrder = []string{"mysql", "redis", "kafka", "consumer", "server"}
-var labels = map[string]string{"mysql": "MySQL", "redis": "Redis", "kafka": "Kafka", "consumer": "消息消费者", "server": "弹幕服务"}
+var managedOrder = []string{"mysql", "redis", "kafka", "consumer", "server", "migrate", "kafka-init"}
+var labels = map[string]string{"mysql": "MySQL", "redis": "Redis", "kafka": "Kafka", "consumer": "消息消费者", "server": "弹幕服务", "migrate": "数据库初始化", "kafka-init": "Kafka 初始化"}
 var startLimits = map[string]time.Duration{"mysql": 30 * time.Second, "redis": 10 * time.Second, "kafka": 90 * time.Second, "consumer": 30 * time.Second, "server": 30 * time.Second}
-var stopLimits = map[string]time.Duration{"mysql": 30 * time.Second, "redis": 15 * time.Second, "kafka": 60 * time.Second, "consumer": 60 * time.Second, "server": 30 * time.Second}
+var stopLimits = map[string]time.Duration{"mysql": 30 * time.Second, "redis": 15 * time.Second, "kafka": 60 * time.Second, "consumer": 60 * time.Second, "server": 30 * time.Second, "migrate": 30 * time.Second, "kafka-init": 30 * time.Second}
 
 type Instance struct {
-	Identity localproc.Identity `json:"identity"`
-	Owned    bool               `json:"owned"`
-	RunID    string             `json:"runId,omitempty"`
-	RunDir   string             `json:"runDir,omitempty"`
-	Ready    bool               `json:"ready"`
-	Stopped  bool               `json:"stopped,omitempty"`
+	Identity  localproc.Identity `json:"identity"`
+	Container *ContainerIdentity `json:"container,omitempty"`
+	Owned     bool               `json:"owned"`
+	RunID     string             `json:"runId,omitempty"`
+	RunDir    string             `json:"runDir,omitempty"`
+	Ready     bool               `json:"ready"`
+	Stopped   bool               `json:"stopped,omitempty"`
 }
 type ServiceView struct {
 	ID     string `json:"id"`
@@ -73,7 +75,7 @@ type Manager struct {
 
 func NewManager(d Driver, stateFile, key string) (*Manager, error) {
 	m := &Manager{driver: d, stateFile: stateFile, key: key, instances: map[string]Instance{}, views: map[string]ServiceView{}, phase: "idle", progress: "点击启动后端，准备本机互动环境。"}
-	for _, id := range serviceOrder {
+	for _, id := range managedOrder {
 		m.views[id] = ServiceView{ID: id, Label: labels[id], Phase: "stopped"}
 	}
 	if stateFile != "" {
@@ -91,7 +93,7 @@ func NewManager(d Driver, stateFile, key string) (*Manager, error) {
 			}
 			m.stopping = saved.Stopping
 			m.consumerTargets = saved.ConsumerTargets
-			for _, id := range serviceOrder {
+			for _, id := range managedOrder {
 				if inst, ok := saved.Instances[id]; ok {
 					m.instances[id] = inst
 					v := m.views[id]
@@ -119,7 +121,12 @@ func (m *Manager) Snapshot() Snapshot {
 		s.ConfigurationError = err.Error()
 		s.CanStart = false
 	}
-	for _, id := range serviceOrder {
+	for _, id := range managedOrder {
+		if isSetupJob(id) {
+			if _, exists := m.instances[id]; !exists {
+				continue
+			}
+		}
 		v := m.views[id]
 		s.Services = append(s.Services, v)
 		if v.Owned && v.Phase != "stopped" {
@@ -219,6 +226,9 @@ func (m *Manager) instance(id string) (Instance, bool) {
 	return i, ok
 }
 func (m *Manager) start() {
+	m.startServices(context.Background(), serviceOrder, startLimits)
+}
+func (m *Manager) startServices(parent context.Context, order []string, limits map[string]time.Duration) {
 	if preflight, ok := m.driver.(interface {
 		Preflight(context.Context, map[string]Instance) error
 	}); ok {
@@ -228,7 +238,7 @@ func (m *Manager) start() {
 			known[k] = v
 		}
 		m.mu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 		err := preflight.Preflight(ctx, known)
 		cancel()
 		if err != nil {
@@ -236,9 +246,9 @@ func (m *Manager) start() {
 			return
 		}
 	}
-	for _, id := range serviceOrder {
+	for _, id := range order {
 		m.view(id, "starting", "检查已有实例")
-		ctx, cancel := context.WithTimeout(context.Background(), startLimits[id])
+		ctx, cancel := context.WithTimeout(parent, limits[id])
 		old, ok := m.instance(id)
 		var previous *Instance
 		if ok {
@@ -248,12 +258,22 @@ func (m *Manager) start() {
 		if err == nil && inst == nil {
 			var created Instance
 			created, err = m.driver.Start(ctx, id)
-			if err == nil {
+			if err == nil || (created.Owned && created.RunID != "") {
 				inst = &created
 			}
 		}
+		if inst != nil {
+			err = errors.Join(err, m.record(id, *inst))
+		}
+		// Docker creates a stopped container first. Persist its identity before
+		// activation so a failed start remains visible and can be recovered.
 		if err == nil {
-			err = m.record(id, *inst)
+			if activator, ok := m.driver.(interface {
+				Activate(context.Context, string, *Instance) error
+			}); ok {
+				err = activator.Activate(ctx, id, inst)
+				err = errors.Join(err, m.record(id, *inst))
+			}
 		}
 		if err == nil {
 			m.view(id, "starting", "等待服务就绪")
@@ -279,7 +299,7 @@ func (m *Manager) start() {
 	m.finish(nil, "ready", "后端已就绪，可以连接房间。")
 }
 func (m *Manager) retainedDependency(id string) bool {
-	dependents := map[string][]string{"mysql": {"server", "consumer"}, "redis": {"server"}, "kafka": {"server", "consumer"}}
+	dependents := map[string][]string{"mysql": {"server", "consumer", "migrate"}, "redis": {"server"}, "kafka": {"server", "consumer", "kafka-init"}}
 	for _, dep := range dependents[id] {
 		if inst, ok := m.instance(dep); ok && !inst.Owned && m.driver.Alive(inst) {
 			return true
@@ -320,7 +340,7 @@ func (m *Manager) stopTargets(ctx context.Context) (map[int32]int64, error) {
 func (m *Manager) stop() {
 	var targets map[int32]int64
 	retained := false
-	for _, id := range []string{"server", "consumer", "kafka", "redis", "mysql"} {
+	for _, id := range []string{"server", "consumer", "migrate", "kafka-init", "kafka", "redis", "mysql"} {
 		inst, ok := m.instance(id)
 		if !ok {
 			continue
@@ -343,7 +363,7 @@ func (m *Manager) stop() {
 			m.view(id, "ready", "保留：仍有原有业务服务依赖它")
 			continue
 		}
-		if id != "server" && id != "consumer" {
+		if id != "server" && id != "consumer" && !isSetupJob(id) {
 			if guard, ok := m.driver.(interface {
 				BeforeStopDependency(context.Context, string) error
 			}); ok {
@@ -360,8 +380,16 @@ func (m *Manager) stop() {
 		m.view(id, "stopping", "等待正常退出")
 		ctx, cancel := context.WithTimeout(context.Background(), stopLimits[id])
 		var err error
-		if id == "consumer" && m.driver.Alive(inst) {
-			targets, err = m.stopTargets(ctx)
+		if id == "consumer" {
+			needTargets := m.driver.Alive(inst)
+			if planner, ok := m.driver.(interface {
+				RequiresTargets(context.Context, Instance) (bool, error)
+			}); ok {
+				needTargets, err = planner.RequiresTargets(ctx, inst)
+			}
+			if err == nil && needTargets {
+				targets, err = m.stopTargets(ctx)
+			}
 		}
 		if err == nil {
 			err = m.driver.Stop(ctx, id, inst, targets)
@@ -403,7 +431,7 @@ func (m *Manager) Refresh(ctx context.Context) {
 	}
 	generation := m.generation
 	m.mu.Unlock()
-	for _, id := range serviceOrder {
+	for _, id := range managedOrder {
 		inst, ok := m.instance(id)
 		if !ok {
 			continue
@@ -454,3 +482,5 @@ func (m *Manager) Refresh(ctx context.Context) {
 		m.mu.Unlock()
 	}
 }
+
+func isSetupJob(id string) bool { return id == "migrate" || id == "kafka-init" }

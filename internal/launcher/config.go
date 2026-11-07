@@ -28,13 +28,22 @@ type KafkaConfig struct {
 	Home           string `json:"home"`
 	ConfigFile     string `json:"configFile"`
 }
+type DockerConfig struct {
+	Executable  string `json:"executable"`
+	Context     string `json:"context"`
+	Project     string `json:"project"`
+	ComposeFile string `json:"composeFile"`
+	EnvFile     string `json:"envFile"`
+}
 type Config struct {
-	Version int         `json:"version"`
-	RepoDir string      `json:"repoDir"`
-	BinDir  string      `json:"binDir"`
-	MySQL   MySQLConfig `json:"mysql"`
-	Redis   RedisConfig `json:"redis"`
-	Kafka   KafkaConfig `json:"kafka"`
+	Version int          `json:"version"`
+	Backend string       `json:"backend,omitempty"`
+	RepoDir string       `json:"repoDir"`
+	BinDir  string       `json:"binDir"`
+	MySQL   MySQLConfig  `json:"mysql"`
+	Redis   RedisConfig  `json:"redis"`
+	Kafka   KafkaConfig  `json:"kafka"`
+	Docker  DockerConfig `json:"docker,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -63,6 +72,17 @@ func configKey(c Config, db *mysqldriver.Config) string {
 		target = db.Net + "|" + db.Addr + "|" + db.User + "|" + db.DBName
 	}
 	data, _ := json.Marshal(c)
+	if c.Backend == "" || c.Backend == "native" {
+		// Keep existing native lifecycle records recoverable across this update.
+		data, _ = json.Marshal(struct {
+			Version int         `json:"version"`
+			RepoDir string      `json:"repoDir"`
+			BinDir  string      `json:"binDir"`
+			MySQL   MySQLConfig `json:"mysql"`
+			Redis   RedisConfig `json:"redis"`
+			Kafka   KafkaConfig `json:"kafka"`
+		}{c.Version, c.RepoDir, c.BinDir, c.MySQL, c.Redis, c.Kafka})
+	}
 	sum := sha256.Sum256(append(data, []byte(target)...))
 	return hex.EncodeToString(sum[:])
 }

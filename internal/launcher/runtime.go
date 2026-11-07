@@ -337,6 +337,9 @@ func (r *Runtime) probeOnce(ctx context.Context, id string, inst Instance) error
 			return err
 		}
 	}
+	return r.probeProtocol(ctx, id, inst)
+}
+func (r *Runtime) probeProtocol(ctx context.Context, id string, inst Instance) error {
 	switch id {
 	case "mysql":
 		db, err := infra.OpenDB()
