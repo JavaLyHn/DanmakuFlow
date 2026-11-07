@@ -1,5 +1,22 @@
 # Go 主线开发记录
 
+## 2026-11-07：Kafka 协调器与 Windows 存储故障
+
+本机日志确认两项独立问题：
+
+1. 08:58:18.323 的首次协调器查询触发 `__consumer_offsets` 创建，18.411 已加载完成。此前单次查询遇到 `coordinator not available` 就直接结束启动。现仅对协调器不可用、协调器切换、位点加载中的三类协议错误按 250ms 重试，沿用每个操作的超时；认证、外部消费组归属和其他错误仍立即返回。取消不再继续发起检查，但不能中断 Sarama 已在执行的内部网络调用。
+2. 08:58:38，Kafka 4.1.2 清理超出一小时保留期的旧分段，日志文件先改名为 `.deleted`，随后内存映射中的 `.index` 改名被 Windows 拒绝，唯一日志目录离线，进程退出。实际 JAR 的 `AbstractIndex.renameTo` 与 [官方源码](https://github.com/apache/kafka/blob/4.1.2/storage/src/main/java/org/apache/kafka/storage/internals/log/AbstractIndex.java#L217) 均直接移动文件；这不是缺少 JVM 模块开放参数。[Kafka 操作系统说明](https://kafka.apache.org/41/operations/hardware-and-os/)也指出 Windows 支持有限。未通过禁用保留策略、删日志或重新格式化来规避。
+
+已在 Kafka 停止后完整备份 26 个存储文件（42,059,102 字节），逐文件 SHA256 一致；原目录未修改。旧 `.log.deleted` 仍保留，但日志起始位点已推进到 372，不能把备份等同于已恢复历史消息。副本位于本机受限 `.local/`，不入 Git。
+
+协调器回归已先失败再通过，覆盖瞬态恢复、永久错误、取消和超时。本机全套串行 Go 单元测试通过；额外 Windows vet 发现并修复了已有命令行解析的 `uintptr` 转换告警，改用标准库的有类型 Win32 包装，原生进程测试、Windows vet 和启动器编译通过。后续组合测试程序的一次启动仍被应用控制拦截，因此最终组合验证由 CI 补齐，不将其记作本机通过。
+
+最终代码 `9633815` 的 [Go CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42322525811) 和 [Windows CI](https://github.com/JavaLyHn/DanmakuFlow/actions/runs/42322525872) 均通过，后者包含 Windows vet、原生进程与协调器回归、真实 Redis 路径检查及现有脚本测试。
+
+新版启动器本机帮助命令与 4174 页面启动成功。对已确认退出的 Kafka 做了单次人工故障收尾：核对无进程、无监听、从未启动业务进程，保留原状态备份和异常退出记录，再记录其已结束，未将退出码 1 当作正常退出。随后通过启动器停止接口正常关闭本次 MySQL 与 Redis，MySQL 日志明确显示 Normal shutdown；最终只有 4174 保留监听。
+
+**完整业务链仍待验收。** 本机未安装可用 WSL/Docker，已请用户选择安装限资源 WSL2 Kafka 或使用已有 Linux 环境；尚未安装系统组件，也没有重启旧 Kafka。Linux 方案的数据目录必须位于 Linux 文件系统，不能继续使用 Windows 挂载目录来掩盖同一问题。此处等待的是新增运行环境范围的选择，后续测试仍由助手完成。
+
 ## 2026-11-07：Redis 启动修复与全流程验收阻碍
 
 用户要求亲自完成真实全流程测试后交付，授权本次单实例、低资源的本机服务联调；没有恢复压测或基准测试。当前**尚未完成全流程验收**，不能将以下隔离检查等同于真实业务链通过。
