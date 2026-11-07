@@ -239,6 +239,36 @@ func kafkaClient(ctx context.Context) (sarama.Client, error) {
 	return sarama.NewClient([]string{"127.0.0.1:9092"}, cfg)
 }
 func (r *Runtime) checkGroup(ctx context.Context, runID string, requireMember ...bool) error {
+	return retryCoordinatorCheck(ctx, 250*time.Millisecond, func() error {
+		return r.checkGroupOnce(ctx, runID, requireMember...)
+	})
+}
+func retryCoordinatorCheck(ctx context.Context, interval time.Duration, check func() error) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := check()
+		if err == nil {
+			return ctx.Err()
+		}
+		// A newly created offsets topic can still be loading after the broker
+		// accepts metadata requests. Never retry ownership or authorization errors.
+		if !errors.Is(err, sarama.ErrConsumerCoordinatorNotAvailable) &&
+			!errors.Is(err, sarama.ErrNotCoordinatorForConsumer) &&
+			!errors.Is(err, sarama.ErrOffsetsLoadInProgress) {
+			return err
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("等待 Kafka 消费组协调器就绪（%v）：%w", err, ctx.Err())
+		case <-timer.C:
+		}
+	}
+}
+func (r *Runtime) checkGroupOnce(ctx context.Context, runID string, requireMember ...bool) error {
 	c, err := kafkaClient(ctx)
 	if err != nil {
 		return err
