@@ -1,0 +1,24 @@
+# Only source files required by the build may enter its context.
+**
+!go.mod
+!go.sum
+!LICENSE
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!web/
+!web/**
+
+# Keep generated files and local settings out even under allowed directories.
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+**/*.exe
+**/*.dll
+**/.env
+**/.env.*
+**/.local
+**/.superpowers
