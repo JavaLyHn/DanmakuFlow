@@ -32,28 +32,74 @@ flowchart TB
     cli <-->|"WebSocket"| server
 ```
 
-<details>
-<summary>进入房间与发送弹幕：从 WebSocket 到房间广播和 MySQL</summary>
+### Kafka 弹幕持久化流程
+
+**生产与广播。** 客户端携带 `uid` 和 `room` 连接 `/ws`。本机第一个成员进入房间时，服务端开始订阅该房间的 Redis 频道。收到 101 弹幕后，服务端用连接信息补全房间、用户和发送时间，将完整的 JSON 消息作为 Kafka 记录的 value，key 留空。点赞（103）和统计推送（102）走下方的房间统计流程。
 
 ```mermaid
 flowchart TD
-    connect["客户端请求 /ws，携带 uid 和 room"] --> admit["校验参数，升级 WebSocket 并登记连接"]
-    admit -->|"收到 101 弹幕"| message["补全房间、用户和发送时间"]
-    message --> enqueue["将弹幕放入 Kafka 生产者队列"]
-    enqueue -->|"服务端随后发布"| channel["Redis 房间频道"]
-    channel --> relay["已订阅该房间的服务实例收到弹幕"]
-    relay --> display["通过 WebSocket 广播给本机同房间的连接"]
-    enqueue -->|"生产者异步发送"| topic["Kafka 主题 danmaku_save_topic"]
-    topic --> batch["消费者拉取消息并组批"]
-    batch -->|"达到 1000 条或每 2 秒"| write["批量写入 MySQL 的 danmaku_messages"]
-    write -->|"写入成功"| offset["标记已处理的 Kafka 位点"]
-    write -->|"写入失败"| retry["保留该批次并重试"]
-    retry --> write
+    msg["server 将完整弹幕交给房间消息循环"] --> input["交给 Sarama 异步生产者 Input"]
+    input -->|"入队返回后"| publish["server 发布到 Redis 房间频道"]
+    publish --> echo["订阅者将弹幕推送给本机房间成员"]
+    input -->|"生产者选分区、组批"| batch["50 条、8 KiB 或 50 ms 触发发送"]
+    batch --> send["Snappy 压缩，发送 Produce 请求"]
+    send -->|"成功"| appendLog["leader 追加到分区日志，分配 offset"]
+    appendLog --> ack["leader 向生产者返回 ACK"]
+    send -->|"可重试错误且次数未耗尽"| retry["退避后重新发送"]
+    retry --> send
+    send -->|"最终失败"| fail["Errors 通道交给 Manager 记录失败"]
 ```
 
-本实例的第一个房间成员加入时，服务端开始订阅该房间频道。页面收到回显表明房间广播已到达客户端。数据库写入由消费者独立完成。若消费者在写库成功后、提交位点前退出，恢复消费时可能再次写入同一条弹幕。
+生产者使用随机分区器。Docker 初始化任务 `kafka-init` 在主题缺失时创建 `danmaku_save_topic`，本地配置为 **1 个分区、1 个副本**，所以所有房间的弹幕都进入分区 0。每个生产请求最多包含 200 条记录。遇到可重试的发送错误，Sarama 默认最多重试 3 次，退避 100 ms。
 
-</details>
+`WaitForLocal`（`acks=1`）表示 leader 接收记录后应答。应用关闭了逐条成功回调，最终发送错误会影响服务端的停服结果。浏览器回显由 Redis 订阅触发，可以早于 Kafka 的 ACK 和 MySQL 写入。若生产者来不及接收，服务端会在写入 `Input()` 时等待，该条弹幕向 Redis 发布的时间也会推迟。[消息组装](internal/ws/router.go) · [生产者配置](internal/infra/kafka.go) · [入队、广播与错误收集](internal/ws/manager.go) · [主题初始化](docker-compose.yaml)
+
+**消费、写库与位点提交。** `consumer` 启动时先检查 MySQL 表结构，再加入消费组 `danmaku_group_v1`。协调器分配分区后，消费者才报告就绪。下图中的 `n` 是一条记录在该分区的 offset，提交 `n + 1` 表示下次从下一条记录继续。
+
+```mermaid
+flowchart TD
+    joinGroup["加入消费组，取得分区 0"] --> saved{"有可用的已提交位点？"}
+    saved -->|"有"| resume["从组已提交的下一位点读取"]
+    saved -->|"无"| oldest["OffsetOldest：从最早保留记录读取"]
+    resume --> fetch["Sarama 拉取记录，交给 ConsumeClaim"]
+    oldest --> fetch
+    fetch --> queue["原始记录和解析结果进入会话队列，容量 2000"]
+    queue --> flush["worker 组批：满 1000 条或每 2 秒刷新"]
+    flush --> insert["通过 GORM 将本批有效弹幕写入 danmaku_messages"]
+    insert -->|"写库失败"| backoff["保留整批，等待 500 ms 再试"]
+    backoff --> insert
+    insert -->|"成功，或整批均无有效行"| mark["逐条 MarkMessage，在内存标记 n + 1"]
+    mark --> commit["Sarama 定期向组协调器提交已标记位点"]
+    commit -->|"提交成功"| checkpoint["Kafka 保存该消费组的恢复位置"]
+```
+
+生产者组批用于合并网络请求，消费者组批用于合并数据库写入，两者阈值独立。消费者的 `Fetch.Default` 为每分区 5 MiB，这是拉取大小参数。同一消费组在同一时刻由一个成员处理一个分区；当前主题只有分区 0，即使增加同组消费者，也只有取得该分区的成员能处理弹幕。
+
+当前解析失败或类型不是 101 的记录仍随批次进入位点处理，写库时跳过对应行。有效行写入失败时，本批标记推迟到重试成功。发生重平衡时，旧会话尝试排空已接收记录并限时刷新最后一批，新会话根据分配结果和已提交位点继续消费。
+
+`MarkMessage` 更新会话内的待提交位点。项目沿用 Sarama v1.46.3 默认的自动提交（间隔 1 秒）。提交成功后，Kafka 将这个消费组在该主题、分区上的进度保存在内部主题 `__consumer_offsets`。按分区计算，`lag = 日志末端的下一位点 − 组已提交的下一位点`。MySQL 写入与 Kafka 提交分别完成，之间的间隙决定了恢复时是否重放。[消费组配置](cmd/consumer/main.go) · [组批、重试和标记](internal/consumer/handler.go) · [MySQL 批量插入](internal/repo/message_repo.go) · [Sarama 默认配置](https://github.com/IBM/sarama/blob/v1.46.3/config.go)
+
+**异常退出时为什么会重复写入。** 2026-11-12 的隔离实验先用一条对照消息将已提交位点推进到 1，然后只发送一次目标弹幕。目标弹幕位于分区 0、offset 1，分区日志末端为 2。测试版消费者在实际写库成功与调用 `MarkMessage` 之间退出，随后由原版消费者加入同一组。
+
+```mermaid
+sequenceDiagram
+    participant k as Kafka 分区与组协调器
+    participant c as 消费者
+    participant db as MySQL
+    k-->>c: 第一次读取 offset 1
+    c->>db: 批量插入目标弹幕
+    db-->>c: 提交成功，主键为 2
+    c->>c: 故障注入，标记前退出
+    c->>k: 原版进程重启，查询组位点
+    k-->>c: 已提交位点仍为 1，重新读取同一条记录
+    c->>db: 重放后再次插入目标弹幕
+    db-->>c: 提交成功，新主键为 3
+    c->>c: MarkMessage 标记下一位点 2
+    c->>k: 自动提交下一位点 2
+    k-->>c: 提交成功，此时 lag 为 0
+```
+
+目标记录写入 Kafka 后，分区日志末端始终为 2。MySQL 中主键 2 和 3 的房间、用户、内容和发送时间完全相同。消息表使用自增主键，重放插入时会得到新主键。作为对照，位点 2 提交后再次正常重启，数据库行数保持不变。[消息表结构](internal/infra/schema.go)
 
 <details>
 <summary>点赞、在线连接数与房间统计推送</summary>
@@ -94,9 +140,11 @@ flowchart LR
     end
     subgraph stopPhase["页面停服"]
         direction TB
-        stop["点击停止本次启动的服务"] --> drain["弹幕服务排空已接收工作并等待发送结果"]
-        drain --> target["记录 Kafka 目标位点，等待消费者追平并落库"]
-        target --> ack["确认消费位点已提交"]
+        stop["点击停止本次启动的服务"] --> drain["server 排空消息，关闭生产者并等待发送结果"]
+        drain --> target["启动器保存各分区末端作为停服目标"]
+        target --> caughtUp["消费者查询协调器，等已提交位点追上目标"]
+        caughtUp --> quiesce["暂停拉取，排空已接收队列并刷新剩余批次"]
+        quiesce --> ack["确认最终位点已提交，退出消费组，启动器复核目标"]
         ack --> shutdown["依次停止本次可关闭的 Kafka、Redis、MySQL"]
         shutdown --> idle["4174 页面保留，可再次启动"]
     end
@@ -105,6 +153,8 @@ flowchart LR
 ```
 
 普通启动检查既有表结构和 Kafka 主题。启动器复用符合配置的已有实例，停止时保留外部实例及其仍需使用的依赖。启停中途失败时，页面提供组件状态、日志和重试入口。MySQL 和 Kafka 使用 Docker 命名卷，正常停服后数据保留。
+
+停服目标取自 `GetOffset(OffsetNewest)`，表示每个分区末尾的下一位点。启动器保存这些目标，重试时沿用同一组数值。消费者退出后，启动器再次向协调器核对已提交位点，核对失败时保留依赖供重试。[停服目标与重试](internal/launcher/manager.go) · [消费者排空](cmd/consumer/main.go) · [退出后的位点核对](internal/launcher/docker_stop.go)
 
 </details>
 
