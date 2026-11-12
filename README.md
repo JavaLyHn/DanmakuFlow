@@ -6,6 +6,108 @@ Go 直播弹幕项目，由 JavaLyHn 维护。支持 WebSocket 房间、弹幕�
 
 仓库拆分、验证边界和后续事项见 [开发记录](docs/DEVELOPMENT.md)。
 
+## 系统流程图
+
+浏览器通过 `127.0.0.1:4174` 打开启停页面，通过 `127.0.0.1:8080/ws` 直接连接弹幕服务。终端客户端使用同一个 WebSocket 接口。Docker 中的五个常驻服务各运行一个实例。
+
+```mermaid
+flowchart TB
+    web["Vue 浏览器界面"]
+    cli["Go 终端客户端"]
+    launcher["Windows 本地启动器 · 4174"]
+    subgraph backend["Docker Desktop · Linux 容器"]
+        server["Go 弹幕服务 · 8080"]
+        redis[("Redis · 房间频道与统计")]
+        kafka[("Kafka · 弹幕事件")]
+        consumer["Go 消息消费者"]
+        mysql[("MySQL · 弹幕记录")]
+        server <-->|"发布与订阅、读写统计"| redis
+        server -->|"发送弹幕"| kafka
+        kafka -->|"消费弹幕"| consumer
+        consumer -->|"批量写入"| mysql
+    end
+    web <-->|"HTTP 页面、启停、状态与日志"| launcher
+    launcher -.->|"Docker CLI / Compose 管理"| backend
+    web <-->|"WebSocket"| server
+    cli <-->|"WebSocket"| server
+```
+
+<details>
+<summary>进入房间与发送弹幕：从 WebSocket 到房间广播和 MySQL</summary>
+
+```mermaid
+flowchart TD
+    connect["客户端请求 /ws，携带 uid 和 room"] --> admit["校验参数，升级 WebSocket 并登记连接"]
+    admit -->|"收到 101 弹幕"| message["补全房间、用户和发送时间"]
+    message --> enqueue["将弹幕放入 Kafka 生产者队列"]
+    enqueue -->|"服务端随后发布"| channel["Redis 房间频道"]
+    channel --> relay["已订阅该房间的服务实例收到弹幕"]
+    relay --> display["通过 WebSocket 广播给本机同房间的连接"]
+    enqueue -->|"生产者异步发送"| topic["Kafka 主题 danmaku_save_topic"]
+    topic --> batch["消费者拉取消息并组批"]
+    batch -->|"达到 1000 条或每 2 秒"| write["批量写入 MySQL 的 danmaku_messages"]
+    write -->|"写入成功"| offset["标记已处理的 Kafka 位点"]
+    write -->|"写入失败"| retry["保留该批次并重试"]
+    retry --> write
+```
+
+本实例的第一个房间成员加入时，服务端开始订阅该房间频道。页面收到回显表明房间广播已到达客户端。数据库写入由消费者独立完成。若消费者在写库成功后、提交位点前退出，恢复消费时可能再次写入同一条弹幕。
+
+</details>
+
+<details>
+<summary>点赞、在线连接数与房间统计推送</summary>
+
+```mermaid
+flowchart TD
+    like["点击点赞或发送恰好为 1 的文本"] -->|"103 点赞"| delta["服务端按房间累加点赞增量"]
+    delta --> flush["批量将待处理增量累加到 Redis"]
+    tick["每 3 秒执行统计"] --> flush
+    flush --> heartbeat["统计各活跃房间的本机连接数，更新 Redis 心跳"]
+    sockets["进房时登记连接，断开时移除连接"] --> heartbeat
+    heartbeat --> readStats["从 Redis 汇总有效心跳，读取房间累计点赞"]
+    readStats -->|"102 房间统计"| push["通过 WebSocket 推送给本机同房间客户端"]
+```
+
+在线人数按连接计数，每个服务实例的房间心跳有效期为 7 秒。最后一个本地连接离开房间时，服务端取消该房间的 Redis 订阅。当前 Redis 使用临时存储，停止后再启动时，点赞归零，在线数随客户端重新连接而更新。
+
+</details>
+
+<details>
+<summary>首次初始化、日常启动与有序停止</summary>
+
+```mermaid
+flowchart LR
+    subgraph first["首次准备"]
+        direction TB
+        build["配置并构建镜像和启动器"] --> init["运行 init-docker.ps1"]
+        init --> infra["准备 MySQL、Redis、Kafka"]
+        infra --> jobs["migrate 补建表，再由 kafka-init 创建缺失主题"]
+        jobs --> settled["停止本次初始化启动的服务"]
+    end
+    subgraph startPhase["日常启动"]
+        direction TB
+        openPage["Start-DanmakuFlow.cmd 打开 4174 页面"] --> start["点击启动后端，核对配置、端口和实例归属"]
+        start --> deps["依次准备 MySQL、Redis、Kafka"]
+        deps --> apps["消费者加入消费组，再启动弹幕服务"]
+        apps --> ready["五项就绪，客户端可连接房间"]
+    end
+    subgraph stopPhase["页面停服"]
+        direction TB
+        stop["点击停止本次启动的服务"] --> drain["弹幕服务排空已接收工作并等待发送结果"]
+        drain --> target["记录 Kafka 目标位点，等待消费者追平并落库"]
+        target --> ack["确认消费位点已提交"]
+        ack --> shutdown["依次停止本次可关闭的 Kafka、Redis、MySQL"]
+        shutdown --> idle["4174 页面保留，可再次启动"]
+    end
+    first --> startPhase
+    startPhase --> stopPhase
+```
+
+普通启动检查既有表结构和 Kafka 主题。启动器复用符合配置的已有实例，停止时保留外部实例及其仍需使用的依赖。启停中途失败时，页面提供组件状态、日志和重试入口。MySQL 和 Kafka 使用 Docker 命名卷，正常停服后数据保留。
+
+</details>
+
 ## 代码结构
 
 | 路径 | 用途 |
